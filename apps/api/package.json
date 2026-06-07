@@ -1,0 +1,26 @@
+{
+  "name": "@pharma/api",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "@hono/node-server": "^1.13.0",
+    "bullmq": "^5.30.0",
+    "drizzle-orm": "^0.44.0",
+    "@pharma/db": "workspace:*",
+    "@pharma/whatsapp": "workspace:*",
+    "@pharma/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

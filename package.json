@@ -1,0 +1,14 @@
+{
+  "name": "pharma-msa",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev:api": "pnpm --filter @pharma/api dev",
+    "dev:worker": "pnpm --filter @pharma/worker dev",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r clean"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
