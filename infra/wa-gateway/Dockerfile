@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Pin to a specific commit for reproducibility
 RUN git clone https://github.com/mimamch/wa-gateway.git . && \
-    git checkout main
+    git checkout master
 
 RUN npm install
 
