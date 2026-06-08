@@ -8,6 +8,9 @@
     "typecheck": "pnpm -r typecheck",
     "clean": "pnpm -r clean"
   },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
   "packageManager": "pnpm@10.12.1",
   "engines": {
     "node": ">=22"
