@@ -1,3 +1,7 @@
+import dns from 'node:dns';
+// Force IPv4-first DNS resolution — fixes EAI_AGAIN on Alpine/musl + Docker embedded DNS
+dns.setDefaultResultOrder('ipv4first');
+
 import { Queue } from 'bullmq';
 import { createDb } from '@pharma/db';
 import { WhatsAppClient } from '@pharma/whatsapp';

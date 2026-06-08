@@ -1,3 +1,7 @@
+import dns from 'node:dns';
+// Force IPv4-first DNS resolution — fixes EAI_AGAIN on Alpine/musl + Docker embedded DNS
+dns.setDefaultResultOrder('ipv4first');
+
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
