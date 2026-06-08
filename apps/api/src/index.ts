@@ -20,6 +20,8 @@ const redisUrl = new URL(process.env.REDIS_URL!);
 const redisConnection = {
   host: redisUrl.hostname,
   port: parseInt(redisUrl.port || '6379', 10),
+  ...(redisUrl.password && { password: decodeURIComponent(redisUrl.password) }),
+  ...(redisUrl.username && redisUrl.username !== 'default' && { username: redisUrl.username }),
 };
 const waClient = new WhatsAppClient(
   process.env.WA_GATEWAY_URL!,
