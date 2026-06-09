@@ -27,8 +27,9 @@ async function resolveHost(hostname: string): Promise<string> {
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const addresses = await resolve4(hostname);
-      console.log(`[DNS] Resolved ${hostname} → ${addresses[0]}`);
-      return addresses[0];
+      const ip = addresses[0] ?? hostname;
+      console.log(`[DNS] Resolved ${hostname} → ${ip}`);
+      return ip;
     } catch (err) {
       console.warn(`[DNS] Attempt ${attempt + 1}/5 failed for ${hostname}:`, (err as Error).message);
       await new Promise(r => setTimeout(r, 2000));
