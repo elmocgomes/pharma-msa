@@ -1,6 +1,8 @@
 import dns from 'node:dns';
-// Force IPv4-first DNS resolution — fixes EAI_AGAIN on Alpine/musl + Docker embedded DNS
+import { promisify } from 'node:util';
+// Force IPv4-first DNS resolution
 dns.setDefaultResultOrder('ipv4first');
+const resolve4 = promisify(dns.resolve4);
 
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -19,12 +21,30 @@ import { createConversationRoutes } from './routes/conversations.js';
 import { createResultRoutes } from './routes/results.js';
 import { errorHandler } from './middleware/error-handler.js';
 
+// Resolve hostnames to IPs at startup to bypass Docker DNS for long-lived connections
+async function resolveHost(hostname: string): Promise<string> {
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return hostname;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const addresses = await resolve4(hostname);
+      console.log(`[DNS] Resolved ${hostname} → ${addresses[0]}`);
+      return addresses[0];
+    } catch (err) {
+      console.warn(`[DNS] Attempt ${attempt + 1}/5 failed for ${hostname}:`, (err as Error).message);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  console.warn(`[DNS] All attempts failed for ${hostname}, using hostname as fallback`);
+  return hostname;
+}
+
 const db = createDb(process.env.DATABASE_URL!);
 const redisUrl = new URL(process.env.REDIS_URL!);
+const redisHost = await resolveHost(redisUrl.hostname);
 const redisConnection = {
-  host: redisUrl.hostname,
+  host: redisHost,
   port: parseInt(redisUrl.port || '6379', 10),
-  family: 4, // Force IPv4 — fixes EAI_AGAIN on Alpine/musl + Docker DNS
+  family: 4,
   ...(redisUrl.password && { password: decodeURIComponent(redisUrl.password) }),
   ...(redisUrl.username && redisUrl.username !== 'default' && { username: redisUrl.username }),
 };
