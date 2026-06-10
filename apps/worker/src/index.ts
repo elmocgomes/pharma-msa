@@ -46,14 +46,13 @@ const redis: ConnectionOptions = {
   ...(redisUrl.username && redisUrl.username !== 'default' && { username: redisUrl.username }),
 };
 
-// Resolve wa-gateway hostname to IP too
-const waUrl = new URL(process.env.WA_GATEWAY_URL!);
-const waHost = await resolveHost(waUrl.hostname);
-const resolvedWaUrl = `${waUrl.protocol}//${waHost}:${waUrl.port || (waUrl.protocol === 'https:' ? '443' : '80')}`;
-console.log(`[DNS] WA Gateway URL: ${resolvedWaUrl}`);
+// Use WA_GATEWAY_URL as-is (sslip.io hostname resolves via standard DNS,
+// and Traefik needs the Host header to match for routing)
+const waGatewayUrl = process.env.WA_GATEWAY_URL!;
+console.log(`[CONFIG] WA Gateway URL: ${waGatewayUrl}`);
 
 const waClient = new WhatsAppClient(
-  resolvedWaUrl,
+  waGatewayUrl,
   process.env.WA_GATEWAY_KEY!,
 );
 
