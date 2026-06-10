@@ -70,7 +70,7 @@ export async function findActiveConversation(
     .where(
       and(
         eq(conversations.waSessionId, waSessionId),
-        eq(pharmacies.phoneNumber, senderPhone),
+        sql`regexp_replace(${pharmacies.phoneNumber}, '\\D', '', 'g') = ${senderPhone}`,
         sql`${conversations.status} IN ('greeting', 'in_progress', 'waiting_response', 'recovery', 'timeout')`,
       ),
     )
