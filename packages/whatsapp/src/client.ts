@@ -1,4 +1,4 @@
-import type { WaSessionInfo, WaSendTextOptions, WaSendImageOptions } from './types.js';
+import type { WaSessionInfo, WaSessionDetail, WaProfileInfo, WaSendTextOptions, WaSendImageOptions } from './types.js';
 
 export class WhatsAppClient {
   constructor(
@@ -24,6 +24,8 @@ export class WhatsAppClient {
     return response.json() as Promise<T>;
   }
 
+  // ── Session Management ──
+
   async listSessions(): Promise<WaSessionInfo[]> {
     const result = await this.request<{ data: WaSessionInfo[] }>('/session');
     return result.data;
@@ -31,6 +33,12 @@ export class WhatsAppClient {
 
   async getSession(session: string): Promise<WaSessionInfo> {
     const result = await this.request<{ data: WaSessionInfo }>(`/session/${session}`);
+    return result.data;
+  }
+
+  /** Get detailed session info including device metadata */
+  async getSessionDetail(session: string): Promise<WaSessionDetail> {
+    const result = await this.request<{ data: WaSessionDetail }>(`/session/${session}`);
     return result.data;
   }
 
@@ -45,6 +53,16 @@ export class WhatsAppClient {
   async deleteSession(session: string): Promise<void> {
     await this.request(`/session/${session}`, { method: 'DELETE' });
   }
+
+  /** Logout session without deleting (via /session/logout) */
+  async logoutSession(session: string): Promise<void> {
+    await this.request('/session/logout', {
+      method: 'POST',
+      body: JSON.stringify({ session }),
+    });
+  }
+
+  // ── Messaging ──
 
   async sendText(opts: WaSendTextOptions): Promise<void> {
     await this.request('/message/send-text', {
@@ -70,6 +88,30 @@ export class WhatsAppClient {
       }),
     });
   }
+
+  // ── Profile ──
+
+  /** Check if a WhatsApp number is registered and get profile */
+  async getProfile(session: string, target: string): Promise<WaProfileInfo> {
+    const result = await this.request<{ data: WaProfileInfo }>('/profile', {
+      method: 'POST',
+      body: JSON.stringify({ session, target }),
+    });
+    return result.data;
+  }
+
+  /** Check if a number is registered on WhatsApp */
+  async isRegistered(session: string, phone: string): Promise<boolean> {
+    try {
+      const jid = `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
+      await this.getProfile(session, jid);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ── Health ──
 
   async healthCheck(): Promise<boolean> {
     try {

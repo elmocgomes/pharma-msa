@@ -35,6 +35,31 @@ export interface WaSessionInfo {
   };
 }
 
+export interface WaSessionDetail {
+  session: string;
+  status: string;
+  details?: {
+    name?: string;
+    phoneNumber?: string;
+  };
+  connection?: {
+    isConnected: boolean;
+    lastUpdate: string;
+  };
+  metadata?: {
+    platform?: string;
+    deviceManufacturer?: string;
+    deviceModel?: string;
+  };
+}
+
+export interface WaProfileInfo {
+  name?: string;
+  status?: string;
+  imgUrl?: string;
+  isBusiness?: boolean;
+}
+
 export interface WaSendTextOptions {
   session: string;
   to: string;
