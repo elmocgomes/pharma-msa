@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { WhatsAppClient } from '@pharma/whatsapp';
-import { waSessions, conversations, messages, type Db } from '@pharma/db';
+import { waSessions, conversations, messages, conversationEvents, extractionResults, productFindings, type Db } from '@pharma/db';
 
 export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
   const app = new Hono();
@@ -125,6 +125,38 @@ export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
       // Continue with DB deletion even if gateway fails
     }
 
+    // Cascade-delete all dependent data in FK order
+    const sessionConvos = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.waSessionId, id));
+
+    if (sessionConvos.length > 0) {
+      const convIds = sessionConvos.map((cv) => cv.id);
+
+      // 1. product_findings → extraction_results
+      const extractions = await db
+        .select({ id: extractionResults.id })
+        .from(extractionResults)
+        .where(inArray(extractionResults.conversationId, convIds));
+
+      if (extractions.length > 0) {
+        const extIds = extractions.map((e) => e.id);
+        await db.delete(productFindings).where(inArray(productFindings.extractionResultId, extIds));
+        await db.delete(extractionResults).where(inArray(extractionResults.conversationId, convIds));
+      }
+
+      // 2. conversation_events
+      await db.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds));
+
+      // 3. messages
+      await db.delete(messages).where(inArray(messages.conversationId, convIds));
+
+      // 4. conversations
+      await db.delete(conversations).where(eq(conversations.waSessionId, id));
+    }
+
+    // 5. wa_session
     await db.delete(waSessions).where(eq(waSessions.id, id));
     return c.json({ status: 'deleted', id, name: session.name });
   });
