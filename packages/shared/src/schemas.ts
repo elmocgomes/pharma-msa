@@ -80,7 +80,7 @@ export const VALID_TRANSITIONS: Record<ConversationStatus, ConversationStatus[]>
   pending:          ['greeting', 'failed'],
   greeting:         ['waiting_response', 'error'],
   waiting_response: ['in_progress', 'timeout', 'error'],
-  in_progress:      ['waiting_response', 'recovery', 'extracting', 'completed', 'failed', 'error'],
+  in_progress:      ['in_progress', 'waiting_response', 'recovery', 'extracting', 'completed', 'failed', 'error'],
   recovery:         ['waiting_response', 'failed', 'error'],
   extracting:       ['completed', 'error'],
   completed:        [],

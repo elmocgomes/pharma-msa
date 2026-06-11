@@ -24,8 +24,15 @@ export class ScriptRunner {
   }
 
   async executeCurrentNode(conversationId: string, traceId: string) {
+    // Always re-read to get latest version (other workers may have bumped it)
     const [conv] = await this.db.select().from(conversations).where(eq(conversations.id, conversationId));
     if (!conv) throw new Error(`Conversation ${conversationId} not found`);
+
+    // Skip if conversation is in a terminal state
+    if (['completed', 'failed', 'error'].includes(conv.status)) {
+      console.log(`[SCRIPT] Skipping ${conversationId} — already in ${conv.status}`);
+      return;
+    }
 
     if (conv.nodeVisitCount >= MAX_NODE_VISITS) {
       await transition(this.db, {
@@ -130,15 +137,19 @@ export class ScriptRunner {
       nodeId: node.id,
     });
 
+    // Re-read for latest version before transitioning
+    const [freshConv] = await this.db.select().from(conversations).where(eq(conversations.id, conv.id));
+    if (!freshConv) return;
+
     await transition(this.db, {
       conversationId: conv.id,
-      expectedVersion: conv.version,
+      expectedVersion: freshConv.version,
       newStatus: tree[node.next]?.type === 'classify' ? 'waiting_response' : 'in_progress',
       traceId,
       updates: {
         currentNodeId: node.next,
-        nodeVisitCount: conv.nodeVisitCount + 1,
-        startedAt: conv.startedAt ?? new Date(),
+        nodeVisitCount: freshConv.nodeVisitCount + 1,
+        startedAt: freshConv.startedAt ?? new Date(),
       },
       eventData: { sentMessage: message, nextNode: node.next },
     });
@@ -162,9 +173,13 @@ export class ScriptRunner {
     const nextIndex = conv.productIndex + 1;
     const nextProduct = campaignProductList[nextIndex];
 
+    // Re-read for latest version
+    const [freshConv] = await this.db.select().from(conversations).where(eq(conversations.id, conv.id));
+    if (!freshConv) return;
+
     if (nextProduct) {
       const vars = {
-        ...(conv.variables as Record<string, string>),
+        ...(freshConv.variables as Record<string, string>),
         product_name: nextProduct.product.name,
         active_ingredient: nextProduct.product.activeIngredient ?? '',
         brand: nextProduct.product.brand ?? '',
@@ -173,14 +188,14 @@ export class ScriptRunner {
 
       await transition(this.db, {
         conversationId: conv.id,
-        expectedVersion: conv.version,
+        expectedVersion: freshConv.version,
         newStatus: 'in_progress',
         traceId,
         updates: {
           currentNodeId: node.has_more_next,
           productIndex: nextIndex,
           variables: vars,
-          nodeVisitCount: conv.nodeVisitCount + 1,
+          nodeVisitCount: freshConv.nodeVisitCount + 1,
         },
         eventData: { nextProductIndex: nextIndex, productName: nextProduct.product.name },
       });
@@ -189,12 +204,12 @@ export class ScriptRunner {
     } else {
       await transition(this.db, {
         conversationId: conv.id,
-        expectedVersion: conv.version,
+        expectedVersion: freshConv.version,
         newStatus: 'in_progress',
         traceId,
         updates: {
           currentNodeId: node.done_next,
-          nodeVisitCount: conv.nodeVisitCount + 1,
+          nodeVisitCount: freshConv.nodeVisitCount + 1,
         },
         eventData: { allProductsDone: true },
       });
@@ -228,9 +243,13 @@ export class ScriptRunner {
       }
     }
 
+    // Re-read for latest version
+    const [freshConv] = await this.db.select().from(conversations).where(eq(conversations.id, conv.id));
+    if (!freshConv) return;
+
     await transition(this.db, {
       conversationId: conv.id,
-      expectedVersion: conv.version,
+      expectedVersion: freshConv.version,
       newStatus: 'extracting',
       traceId,
       updates: { completedAt: new Date() },

@@ -95,21 +95,22 @@ export function createParseWorker(
           return;
         }
 
-        const [updated] = await db.select().from(conversations).where(eq(conversations.id, conversationId));
-        if (!updated) return;
+        // Update node pointer BEFORE enqueuing conversation job to avoid race
+        const [latest] = await db.select().from(conversations).where(eq(conversations.id, conversationId));
+        if (!latest) return;
+
+        await db.update(conversations).set({
+          currentNodeId: branch.next,
+          nodeVisitCount: latest.nodeVisitCount + 1,
+          retryCount: 0,
+          version: latest.version + 1,
+          updatedAt: new Date(),
+        }).where(eq(conversations.id, conversationId));
 
         await conversationQueue.add('continue', {
           conversationId,
           traceId,
         });
-
-        await db.update(conversations).set({
-          currentNodeId: branch.next,
-          nodeVisitCount: updated.nodeVisitCount + 1,
-          retryCount: 0,
-          version: updated.version + 1,
-          updatedAt: new Date(),
-        }).where(eq(conversations.id, conversationId));
 
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
