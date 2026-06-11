@@ -13,16 +13,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
 COPY apps/dashboard/ ./apps/dashboard/
 COPY pnpm-workspace.yaml package.json ./
-ARG VITE_API_URL=/api
+ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
 RUN pnpm --filter @pharma/dashboard build
 
 FROM nginx:alpine AS runtime
 COPY --from=build /app/apps/dashboard/dist /usr/share/nginx/html
-COPY --from=build /app/apps/dashboard/nginx.conf /etc/nginx/conf.d/default.conf.template
-COPY --from=build /app/apps/dashboard/docker-entrypoint.sh /docker-entrypoint.d/40-api-url.sh
-RUN chmod +x /docker-entrypoint.d/40-api-url.sh
-
-ENV API_URL=http://localhost:3000/
+COPY --from=build /app/apps/dashboard/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
