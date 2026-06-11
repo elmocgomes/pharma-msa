@@ -20,8 +20,9 @@ RUN pnpm --filter @pharma/dashboard build
 FROM nginx:alpine AS runtime
 COPY --from=build /app/apps/dashboard/dist /usr/share/nginx/html
 COPY --from=build /app/apps/dashboard/nginx.conf /etc/nginx/conf.d/default.conf.template
+COPY --from=build /app/apps/dashboard/docker-entrypoint.sh /docker-entrypoint.d/40-api-url.sh
+RUN chmod +x /docker-entrypoint.d/40-api-url.sh
 
-ENV API_URL=http://localhost:3000
-CMD ["/bin/sh", "-c", "envsubst '$API_URL' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+ENV API_URL=http://localhost:3000/
 
 EXPOSE 80
