@@ -10,6 +10,6 @@ export { messages } from './schema/messages.js';
 export { extractionResults, productFindings } from './schema/extractions.js';
 export { conversationEvents } from './schema/events.js';
 
-export { transitionConversation, findActiveConversation } from './queries/conversations.js';
+export { transitionConversation, findActiveConversation, findActiveConversationBySession } from './queries/conversations.js';
 export { computeIdempotencyKey, insertMessageIdempotent, getConversationMessages, getRecentMessages } from './queries/messages.js';
 export { emitEvent } from './queries/events.js';

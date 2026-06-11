@@ -78,3 +78,29 @@ export async function findActiveConversation(
 
   return result[0]?.conversation ?? null;
 }
+
+/**
+ * Find active conversation by session only (fallback for @lid JIDs
+ * where we can't extract the phone number).
+ * Returns the most recent waiting_response conversation for this session.
+ */
+export async function findActiveConversationBySession(
+  db: Db,
+  waSessionId: string,
+) {
+  const result = await db
+    .select({
+      conversation: conversations,
+    })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.waSessionId, waSessionId),
+        sql`${conversations.status} IN ('greeting', 'in_progress', 'waiting_response', 'recovery', 'timeout')`,
+      ),
+    )
+    .orderBy(sql`${conversations.updatedAt} DESC`)
+    .limit(1);
+
+  return result[0]?.conversation ?? null;
+}

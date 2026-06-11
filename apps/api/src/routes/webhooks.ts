@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { Queue } from 'bullmq';
 import { WaWebhookMessageSchema, WaWebhookSessionSchema } from '@pharma/whatsapp';
-import { findActiveConversation, insertMessageIdempotent, computeIdempotencyKey, waSessions } from '@pharma/db';
+import { findActiveConversation, findActiveConversationBySession, insertMessageIdempotent, computeIdempotencyKey, waSessions } from '@pharma/db';
 import { normalizePhone } from '@pharma/shared';
 import { eq } from 'drizzle-orm';
 import type { Db } from '@pharma/db';
@@ -21,6 +21,7 @@ export function createWebhookRoutes(db: Db, redis: ConnectionOptions) {
     }
 
     const { session, from, message, media } = parsed.data;
+    const isLidFormat = from.endsWith('@lid');
     const senderPhone = normalizePhone(from);
 
     const [waSession] = await db
@@ -34,9 +35,14 @@ export function createWebhookRoutes(db: Db, redis: ConnectionOptions) {
       return c.json({ status: 'ignored', reason: 'unknown_session' });
     }
 
-    const conversation = await findActiveConversation(db, waSession.id, senderPhone);
+    // Try phone-based lookup first; fall back to session-based for @lid JIDs
+    let conversation = await findActiveConversation(db, waSession.id, senderPhone);
+    if (!conversation && isLidFormat) {
+      console.log(`[WEBHOOK] LID format detected (${from}), falling back to session-based lookup`);
+      conversation = await findActiveConversationBySession(db, waSession.id);
+    }
     if (!conversation) {
-      console.warn(`[WEBHOOK] No active conversation for ${senderPhone} on session ${session}`);
+      console.warn(`[WEBHOOK] No active conversation for ${from} on session ${session}`);
       return c.json({ status: 'ignored', reason: 'no_active_conversation' });
     }
 
