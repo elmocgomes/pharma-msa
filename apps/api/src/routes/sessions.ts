@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { WhatsAppClient } from '@pharma/whatsapp';
-import { waSessions, conversations, messages, conversationEvents, extractionResults, productFindings, type Db } from '@pharma/db';
+import { waSessions, conversations, messages, conversationEvents, extractionResults, productFindings, campaigns, campaignPharmacies, campaignProducts, type Db } from '@pharma/db';
 
 export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
   const app = new Hono();
@@ -156,7 +156,20 @@ export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
       await db.delete(conversations).where(eq(conversations.waSessionId, id));
     }
 
-    // 5. wa_session
+    // 5. campaign_pharmacies, campaign_products, campaigns
+    const sessionCampaigns = await db
+      .select({ id: campaigns.id })
+      .from(campaigns)
+      .where(eq(campaigns.waSessionId, id));
+
+    if (sessionCampaigns.length > 0) {
+      const campIds = sessionCampaigns.map((cp) => cp.id);
+      await db.delete(campaignPharmacies).where(inArray(campaignPharmacies.campaignId, campIds));
+      await db.delete(campaignProducts).where(inArray(campaignProducts.campaignId, campIds));
+      await db.delete(campaigns).where(eq(campaigns.waSessionId, id));
+    }
+
+    // 6. wa_session
     await db.delete(waSessions).where(eq(waSessions.id, id));
     return c.json({ status: 'deleted', id, name: session.name });
   });
