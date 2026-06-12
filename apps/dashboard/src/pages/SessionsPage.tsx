@@ -278,7 +278,8 @@ function CreateSessionForm({ onClose }: { onClose: () => void }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            create.mutate({ name: name || crypto.randomUUID(), personaName: personaName || undefined });
+            const fallbackName = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            create.mutate({ name: name || fallbackName, personaName: personaName || undefined });
           }}
           className="flex gap-3 items-end"
         >
