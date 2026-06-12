@@ -3,6 +3,7 @@ export const QUEUE_NAMES = {
   conversation: 'conversation',
   parse: 'parse',
   extract: 'extract',
+  analyze: 'analyze',
   maintenance: 'maintenance',
 } as const;
 
@@ -24,6 +25,11 @@ export interface ParseJobData {
 
 export interface ExtractJobData {
   conversationId: string;
+  traceId: string;
+}
+
+export interface AnalyzeJobData {
+  campaignId: string;
   traceId: string;
 }
 

@@ -223,3 +223,42 @@ export const ProductIdentificationSchema = z.object({
   reasoning: z.string(),
 });
 export type ProductIdentification = z.infer<typeof ProductIdentificationSchema>;
+
+// ── Campaign Report ──
+
+export const CampaignReportSchema = z.object({
+  campaign_id: z.string(),
+  reference_product: z.string(),
+  total_pharmacies_contacted: z.number(),
+  total_pharmacies_responded: z.number(),
+  summary: z.object({
+    reference_availability_rate: z.number(),
+    reference_avg_price: z.number().nullable(),
+    reference_price_range: z.object({
+      min: z.number().nullable(),
+      max: z.number().nullable(),
+    }),
+    similares_found: z.array(z.object({
+      name: z.string(),
+      laboratory: z.string().nullable(),
+      availability_rate: z.number(),
+      avg_price: z.number().nullable(),
+      pharmacies_offering: z.number(),
+    })),
+    generics_found: z.array(z.object({
+      name: z.string(),
+      laboratory: z.string().nullable(),
+      availability_rate: z.number(),
+      avg_price: z.number().nullable(),
+      pharmacies_offering: z.number(),
+    })),
+    prescription_required_rate: z.number(),
+    delivery_offered_rate: z.number(),
+    avg_conversation_quality: z.string(),
+    avg_pharmacy_responsiveness: z.string(),
+  }),
+  insights: z.array(z.string()),
+  recommendations: z.array(z.string()),
+  generated_at: z.string(),
+});
+export type CampaignReport = z.infer<typeof CampaignReportSchema>;

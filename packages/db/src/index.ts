@@ -9,6 +9,7 @@ export { conversations } from './schema/conversations.js';
 export { messages } from './schema/messages.js';
 export { extractionResults, productFindings } from './schema/extractions.js';
 export { conversationEvents } from './schema/events.js';
+export { campaignReports } from './schema/reports.js';
 export { agentPrompts, promptVersions } from './schema/prompts.js';
 
 export { transitionConversation, findActiveConversation, findActiveConversationBySession } from './queries/conversations.js';
