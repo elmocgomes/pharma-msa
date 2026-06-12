@@ -43,7 +43,10 @@ export const api = {
   campaigns: {
     list: () => request<Campaign[]>('/campaigns'),
     get: (id: string) => request<Campaign>(`/campaigns/${id}`),
+    create: (data: { name: string; scriptId: string; waSessionId: string; pharmacyIds: string[]; productIds: string[]; settings?: Record<string, unknown> }) =>
+      request<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
     start: (id: string) => request<{ status: string }>(`/campaigns/${id}/start`, { method: 'POST' }),
+    pause: (id: string) => request<{ status: string }>(`/campaigns/${id}/pause`, { method: 'POST' }),
   },
   conversations: {
     list: (campaignId?: string) =>
@@ -55,9 +58,24 @@ export const api = {
   },
   pharmacies: {
     list: () => request<Pharmacy[]>('/pharmacies'),
+    create: (data: { name: string; phoneNumber: string; city?: string; state?: string; notes?: string }) =>
+      request<Pharmacy>('/pharmacies', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Pharmacy>) =>
+      request<Pharmacy>(`/pharmacies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      request<{ status: string }>(`/pharmacies/${id}`, { method: 'DELETE' }),
   },
   products: {
     list: () => request<Product[]>('/products'),
+    create: (data: { name: string; activeIngredient?: string; category?: string; brand?: string; dosage?: string; productType?: string }) =>
+      request<Product>('/products', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Product>) =>
+      request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      request<{ status: string }>(`/products/${id}`, { method: 'DELETE' }),
+  },
+  scripts: {
+    list: () => request<Script[]>('/scripts'),
   },
   health: () => request<{ status: string; timestamp: string }>('/health'),
   prompts: {
@@ -204,6 +222,16 @@ export interface ProductFindingRow {
   notes: string | null;
 }
 
+export interface Script {
+  id: string;
+  name: string;
+  description: string | null;
+  entryNodeId: string;
+  version: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export interface Pharmacy {
   id: string;
   name: string;
@@ -219,6 +247,8 @@ export interface Product {
   activeIngredient: string | null;
   category: string | null;
   brand: string | null;
+  dosage: string | null;
+  productType: 'reference' | 'similar' | 'generic';
   createdAt: string;
 }
 
