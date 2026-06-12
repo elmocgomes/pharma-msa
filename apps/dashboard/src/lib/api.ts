@@ -342,6 +342,9 @@ export interface AnvisaProduct {
   substancia: string;
   produto: string;
   apresentacao: string;
+  dosagem: string | null;
+  forma: string | null;
+  quantidade: string | null;
   laboratorio: string | null;
   tipoProduto: string;
   ean: string | null;

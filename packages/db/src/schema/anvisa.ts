@@ -8,6 +8,9 @@ export const anvisaProducts = pgTable('anvisa_products', {
   substancia: text('substancia').notNull(),
   produto: text('produto').notNull(),
   apresentacao: text('apresentacao').notNull(),
+  dosagem: text('dosagem'),
+  forma: text('forma'),
+  quantidade: text('quantidade'),
   laboratorio: text('laboratorio'),
   tipoProduto: text('tipo_produto').notNull(), // Novo, Similar, Genérico, Biológico, etc.
   ean: text('ean'),
@@ -31,4 +34,5 @@ export const anvisaProducts = pgTable('anvisa_products', {
   index('idx_anvisa_produto').on(t.produto),
   index('idx_anvisa_ean').on(t.ean),
   index('idx_anvisa_codigo_ggrem').on(t.codigoGgrem),
+  index('idx_anvisa_dosagem').on(t.dosagem),
 ]);

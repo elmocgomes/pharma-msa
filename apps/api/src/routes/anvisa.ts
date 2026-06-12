@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { eq, sql, and, or, count, desc } from 'drizzle-orm';
+import { eq, sql, and, or, count, desc, isNull } from 'drizzle-orm';
 import { anvisaProducts, type Db } from '@pharma/db';
-import { getPmcForState, STATE_ICMS_RATE } from '@pharma/shared';
+import { getPmcForState, STATE_ICMS_RATE, parseApresentacao } from '@pharma/shared';
 
 export function createAnvisaRoutes(db: Db) {
   const app = new Hono();
@@ -49,10 +49,15 @@ export function createAnvisaRoutes(db: Db) {
     let inserted = 0;
     for (let i = 0; i < body.products.length; i += CHUNK_SIZE) {
       const chunk = body.products.slice(i, i + CHUNK_SIZE);
-      const rows = chunk.map((p) => ({
+      const rows = chunk.map((p) => {
+        const parsed = parseApresentacao(p.apresentacao);
+        return {
         substancia: p.substancia,
         produto: p.produto,
         apresentacao: p.apresentacao,
+        dosagem: parsed.dosagem,
+        forma: parsed.forma,
+        quantidade: parsed.quantidade,
         laboratorio: p.laboratorio ?? null,
         tipoProduto: p.tipoProduto,
         ean: cleanEan(p.ean),
@@ -70,7 +75,8 @@ export function createAnvisaRoutes(db: Db) {
         comercializacao: p.comercializacao ?? null,
         destinacaoComercial: p.destinacaoComercial ?? null,
         dataPublicacao: body.dataPublicacao ?? null,
-      }));
+      };
+      });
       await db.insert(anvisaProducts).values(rows);
       inserted += rows.length;
     }
@@ -168,11 +174,17 @@ export function createAnvisaRoutes(db: Db) {
   app.get('/products/by-substance/:substance', async (c) => {
     const substance = decodeURIComponent(c.req.param('substance'));
     const state = c.req.query('state');
+    const dosagem = c.req.query('dosagem');
+    const forma = c.req.query('forma');
+
+    const conditions = [eq(anvisaProducts.substancia, substance)];
+    if (dosagem) conditions.push(eq(anvisaProducts.dosagem, dosagem));
+    if (forma) conditions.push(eq(anvisaProducts.forma, forma));
 
     const rows = await db
       .select()
       .from(anvisaProducts)
-      .where(eq(anvisaProducts.substancia, substance))
+      .where(and(...conditions))
       .orderBy(anvisaProducts.tipoProduto, anvisaProducts.produto);
 
     const enriched = rows.map((r) => ({
@@ -212,6 +224,36 @@ export function createAnvisaRoutes(db: Db) {
       stateRates: STATE_ICMS_RATE,
       availableRates: ['0', '12', '17', '17.5', '18', '19', '19.5', '20', '20.5', '21', '22', '22.5', '23'],
     });
+  });
+
+  // ── Backfill parsed apresentacao fields for existing rows ──
+  app.post('/backfill-apresentacao', async (c) => {
+    const BATCH = 1000;
+    let updated = 0;
+    let offset = 0;
+
+    while (true) {
+      const rows = await db
+        .select({ id: anvisaProducts.id, apresentacao: anvisaProducts.apresentacao })
+        .from(anvisaProducts)
+        .where(isNull(anvisaProducts.dosagem))
+        .limit(BATCH)
+        .offset(offset);
+
+      if (rows.length === 0) break;
+
+      for (const row of rows) {
+        const parsed = parseApresentacao(row.apresentacao);
+        await db.update(anvisaProducts)
+          .set({ dosagem: parsed.dosagem, forma: parsed.forma, quantidade: parsed.quantidade })
+          .where(eq(anvisaProducts.id, row.id));
+      }
+
+      updated += rows.length;
+      if (rows.length < BATCH) break;
+    }
+
+    return c.json({ status: 'ok', updated });
   });
 
   return app;

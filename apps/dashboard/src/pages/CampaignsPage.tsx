@@ -307,13 +307,30 @@ export function CampaignsPage() {
   );
 }
 
-function sortCompetitors(list: AnvisaProduct[], mainApresentacao: string): AnvisaProduct[] {
+function sortCompetitors(list: AnvisaProduct[], main: AnvisaProduct | null): AnvisaProduct[] {
+  if (!main) return list;
   return [...list].sort((a, b) => {
-    const aMatch = a.apresentacao === mainApresentacao ? 0 : 1;
-    const bMatch = b.apresentacao === mainApresentacao ? 0 : 1;
-    if (aMatch !== bMatch) return aMatch - bMatch;
+    // Score: 0 = same dosage+form, 1 = same dosage only, 2 = same form only, 3 = different
+    const scoreOf = (p: AnvisaProduct) => {
+      const sameDosagem = p.dosagem && main.dosagem && p.dosagem === main.dosagem;
+      const sameForma = p.forma && main.forma && p.forma === main.forma;
+      if (sameDosagem && sameForma) return 0;
+      if (sameDosagem) return 1;
+      if (sameForma) return 2;
+      return 3;
+    };
+    const diff = scoreOf(a) - scoreOf(b);
+    if (diff !== 0) return diff;
     return a.produto.localeCompare(b.produto);
   });
+}
+
+function competitorMatchLevel(product: AnvisaProduct, main: AnvisaProduct): 'exact' | 'dosage' | 'other' {
+  const sameDosagem = product.dosagem && main.dosagem && product.dosagem === main.dosagem;
+  const sameForma = product.forma && main.forma && product.forma === main.forma;
+  if (sameDosagem && sameForma) return 'exact';
+  if (sameDosagem) return 'dosage';
+  return 'other';
 }
 
 function CompetitorRow({ product, onAdd }: { product: AnvisaProduct; onAdd: (p: AnvisaProduct) => void }) {
@@ -325,7 +342,11 @@ function CompetitorRow({ product, onAdd }: { product: AnvisaProduct; onAdd: (p: 
     >
       <div className="flex-1 min-w-0">
         <span className="text-sm font-medium">{product.produto}</span>
-        <p className="text-[11px] text-text-tertiary truncate">{product.apresentacao}</p>
+        <div className="flex gap-1.5 mt-0.5">
+          {product.dosagem && <span className="text-[10px] bg-blue-50 text-blue-600 px-1 py-0.5 rounded">{product.dosagem}</span>}
+          {product.forma && <span className="text-[10px] bg-gray-50 text-gray-500 px-1 py-0.5 rounded">{product.forma}</span>}
+          {product.quantidade && <span className="text-[10px] bg-gray-50 text-gray-500 px-1 py-0.5 rounded">x{product.quantidade}</span>}
+        </div>
       </div>
       <span className="text-[11px] text-text-tertiary shrink-0">{product.laboratorio ?? '—'}</span>
       <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
@@ -410,10 +431,11 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
     (competitors.data?.products ?? []).filter(
       (c) => c.id !== mainProduct?.id && !selectedCompetitors.some((s) => s.id === c.id),
     ),
-    mainProduct?.apresentacao ?? '',
+    mainProduct,
   );
 
-  const exactMatchCount = competitorList.filter((c) => c.apresentacao === mainProduct?.apresentacao).length;
+  const exactCount = mainProduct ? competitorList.filter((c) => competitorMatchLevel(c, mainProduct) === 'exact').length : 0;
+  const dosageCount = mainProduct ? competitorList.filter((c) => competitorMatchLevel(c, mainProduct) === 'dosage').length : 0;
 
   return (
     <Card>
@@ -513,8 +535,12 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
                   <Pill className="h-4 w-4 text-brand shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-brand">{mainProduct.produto}</p>
-                    <p className="text-[11px] text-text-tertiary">{mainProduct.apresentacao}</p>
-                    <p className="text-[11px] text-text-tertiary">{mainProduct.substancia} · {mainProduct.laboratorio ?? '—'} · {mainProduct.tipoProduto}</p>
+                    <div className="flex gap-2 mt-0.5">
+                      {mainProduct.dosagem && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{mainProduct.dosagem}</span>}
+                      {mainProduct.forma && <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">{mainProduct.forma}</span>}
+                      {mainProduct.quantidade && <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">x{mainProduct.quantidade}</span>}
+                    </div>
+                    <p className="text-[11px] text-text-tertiary mt-0.5">{mainProduct.substancia} · {mainProduct.laboratorio ?? '—'} · {mainProduct.tipoProduto}</p>
                   </div>
                   <button type="button" onClick={clearMainProduct} className="text-text-tertiary hover:text-red-500 shrink-0">
                     <X className="h-4 w-4" />
@@ -553,7 +579,11 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
                         >
                           <div className="flex-1 min-w-0">
                             <span className="font-medium">{p.produto}</span>
-                            <p className="text-[11px] text-text-tertiary truncate">{p.apresentacao}</p>
+                            <div className="flex gap-1.5 mt-0.5">
+                              {p.dosagem && <span className="text-[10px] bg-blue-50 text-blue-600 px-1 py-0.5 rounded">{p.dosagem}</span>}
+                              {p.forma && <span className="text-[10px] bg-gray-50 text-gray-500 px-1 py-0.5 rounded">{p.forma}</span>}
+                              {p.quantidade && <span className="text-[10px] bg-gray-50 text-gray-500 px-1 py-0.5 rounded">x{p.quantidade}</span>}
+                            </div>
                           </div>
                           <span className="text-[11px] text-text-tertiary shrink-0">{p.laboratorio ?? '—'}</span>
                           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
@@ -588,7 +618,7 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
                   {selectedCompetitors.map((p) => (
                     <span key={p.id} className="flex items-center gap-1 bg-purple-100 text-purple-700 text-xs font-medium px-2 py-1 rounded-lg max-w-xs">
                       <span className="truncate">{p.produto}</span>
-                      <span className="text-purple-400 shrink-0">· {p.apresentacao}</span>
+                      <span className="text-purple-400 shrink-0">· {p.dosagem ?? p.apresentacao}</span>
                       <button type="button" onClick={() => removeCompetitor(p.id)} className="hover:text-red-500 shrink-0">
                         <X className="h-3 w-3" />
                       </button>
@@ -608,7 +638,8 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
                     <Users className="h-3.5 w-3.5 text-purple-600" />
                     <span className="text-xs font-medium text-purple-700 flex-1">
                       Available competitors — {competitorList.length} products
-                      {exactMatchCount > 0 && ` (${exactMatchCount} same presentation)`}
+                      {exactCount > 0 && ` (${exactCount} same dosage+form)`}
+                      {dosageCount > 0 && ` (${dosageCount} same dosage)`}
                     </span>
                     {showCompetitors
                       ? <ChevronUp className="h-3.5 w-3.5 text-purple-400" />
@@ -616,18 +647,21 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
                   </button>
                   {showCompetitors && (
                     <div className="max-h-48 overflow-y-auto border-t border-purple-200">
-                      {exactMatchCount > 0 && competitorList.some((c) => c.apresentacao === mainProduct.apresentacao) && (
-                        <div className="px-3 py-1 bg-purple-100/60 text-[10px] font-medium text-purple-600 uppercase tracking-wider">
-                          Same presentation
-                        </div>
-                      )}
                       {competitorList.map((c, i) => {
-                        const isFirstOther = i === exactMatchCount && exactMatchCount > 0;
+                        const level = mainProduct ? competitorMatchLevel(c, mainProduct) : 'other';
+                        const prevLevel = i > 0 && mainProduct ? competitorMatchLevel(competitorList[i - 1], mainProduct) : null;
+                        const showHeader = i === 0 || level !== prevLevel;
                         return (
                           <div key={c.id}>
-                            {isFirstOther && (
-                              <div className="px-3 py-1 bg-purple-50 text-[10px] font-medium text-purple-400 uppercase tracking-wider border-t border-purple-200">
-                                Other presentations
+                            {showHeader && (
+                              <div className={`px-3 py-1 text-[10px] font-medium uppercase tracking-wider ${
+                                level === 'exact' ? 'bg-purple-100/60 text-purple-600' :
+                                level === 'dosage' ? 'bg-blue-50 text-blue-500' :
+                                'bg-gray-50 text-gray-400'
+                              } ${i > 0 ? 'border-t border-purple-200' : ''}`}>
+                                {level === 'exact' ? 'Same dosage & form' :
+                                 level === 'dosage' ? 'Same dosage, different form' :
+                                 'Other presentations'}
                               </div>
                             )}
                             <div className="border-t border-purple-100">
@@ -816,10 +850,11 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
     (competitors.data?.products ?? []).filter(
       (c) => c.id !== mainProduct?.id && !selectedCompetitors.some((s) => s.id === c.id),
     ),
-    mainProduct?.apresentacao ?? '',
+    mainProduct,
   );
 
-  const exactMatchCount = competitorList.filter((c) => c.apresentacao === mainProduct?.apresentacao).length;
+  const exactCount = mainProduct ? competitorList.filter((c) => competitorMatchLevel(c, mainProduct) === 'exact').length : 0;
+  const dosageCount = mainProduct ? competitorList.filter((c) => competitorMatchLevel(c, mainProduct) === 'dosage').length : 0;
 
   return (
     <Card>
@@ -919,8 +954,12 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
                   <Pill className="h-4 w-4 text-brand shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-brand">{mainProduct.produto}</p>
-                    <p className="text-[11px] text-text-tertiary">{mainProduct.apresentacao}</p>
-                    <p className="text-[11px] text-text-tertiary">{mainProduct.substancia} · {mainProduct.laboratorio ?? '—'} · {mainProduct.tipoProduto}</p>
+                    <div className="flex gap-2 mt-0.5">
+                      {mainProduct.dosagem && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{mainProduct.dosagem}</span>}
+                      {mainProduct.forma && <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">{mainProduct.forma}</span>}
+                      {mainProduct.quantidade && <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">x{mainProduct.quantidade}</span>}
+                    </div>
+                    <p className="text-[11px] text-text-tertiary mt-0.5">{mainProduct.substancia} · {mainProduct.laboratorio ?? '—'} · {mainProduct.tipoProduto}</p>
                   </div>
                   <button type="button" onClick={clearMainProduct} className="text-text-tertiary hover:text-red-500 shrink-0">
                     <X className="h-4 w-4" />
@@ -996,7 +1035,7 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
                   {selectedCompetitors.map((p) => (
                     <span key={p.id} className="flex items-center gap-1 bg-purple-100 text-purple-700 text-xs font-medium px-2 py-1 rounded-lg max-w-xs">
                       <span className="truncate">{p.produto}</span>
-                      <span className="text-purple-400 shrink-0">· {p.apresentacao}</span>
+                      <span className="text-purple-400 shrink-0">· {p.dosagem ?? p.apresentacao}</span>
                       <button type="button" onClick={() => removeCompetitor(p.id)} className="hover:text-red-500 shrink-0">
                         <X className="h-3 w-3" />
                       </button>
@@ -1016,7 +1055,8 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
                     <Users className="h-3.5 w-3.5 text-purple-600" />
                     <span className="text-xs font-medium text-purple-700 flex-1">
                       Available competitors — {competitorList.length} products
-                      {exactMatchCount > 0 && ` (${exactMatchCount} same presentation)`}
+                      {exactCount > 0 && ` (${exactCount} same dosage+form)`}
+                      {dosageCount > 0 && ` (${dosageCount} same dosage)`}
                     </span>
                     {showCompetitors
                       ? <ChevronUp className="h-3.5 w-3.5 text-purple-400" />
@@ -1024,18 +1064,21 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
                   </button>
                   {showCompetitors && (
                     <div className="max-h-48 overflow-y-auto border-t border-purple-200">
-                      {exactMatchCount > 0 && competitorList.some((c) => c.apresentacao === mainProduct.apresentacao) && (
-                        <div className="px-3 py-1 bg-purple-100/60 text-[10px] font-medium text-purple-600 uppercase tracking-wider">
-                          Same presentation
-                        </div>
-                      )}
                       {competitorList.map((c, i) => {
-                        const isFirstOther = i === exactMatchCount && exactMatchCount > 0;
+                        const level = mainProduct ? competitorMatchLevel(c, mainProduct) : 'other';
+                        const prevLevel = i > 0 && mainProduct ? competitorMatchLevel(competitorList[i - 1], mainProduct) : null;
+                        const showHeader = i === 0 || level !== prevLevel;
                         return (
                           <div key={c.id}>
-                            {isFirstOther && (
-                              <div className="px-3 py-1 bg-purple-50 text-[10px] font-medium text-purple-400 uppercase tracking-wider border-t border-purple-200">
-                                Other presentations
+                            {showHeader && (
+                              <div className={`px-3 py-1 text-[10px] font-medium uppercase tracking-wider ${
+                                level === 'exact' ? 'bg-purple-100/60 text-purple-600' :
+                                level === 'dosage' ? 'bg-blue-50 text-blue-500' :
+                                'bg-gray-50 text-gray-400'
+                              } ${i > 0 ? 'border-t border-purple-200' : ''}`}>
+                                {level === 'exact' ? 'Same dosage & form' :
+                                 level === 'dosage' ? 'Same dosage, different form' :
+                                 'Other presentations'}
                               </div>
                             )}
                             <div className="border-t border-purple-100">
