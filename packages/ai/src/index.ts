@@ -6,3 +6,4 @@ export { OpenAIProvider } from './providers/openai.js';
 export { NavigatorAgent } from './agents/navigator.js';
 export { RecoveryAgent } from './agents/recovery.js';
 export { ExtractorAgent } from './agents/extractor.js';
+export { ProductIdentifierAgent } from './agents/product-identifier.js';

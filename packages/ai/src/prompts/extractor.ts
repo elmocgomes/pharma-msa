@@ -29,6 +29,90 @@ Analise a conversa e extraia os dados estruturados sobre cada produto.`;
   return [{ role: 'user' as const, content: userContent }];
 }
 
+export const ENRICHED_EXTRACTOR_SYSTEM_PROMPT = `Você é um analista especializado em produtos farmacêuticos brasileiros.
+Sua tarefa é analisar conversas entre um mystery shopper e farmácias, extraindo dados estruturados sobre TODOS os produtos mencionados.
+
+CLASSIFICAÇÃO DE PRODUTOS:
+- "reference" (Referência): Produto original/inovador de marca (ex: Rivotril, Amoxil)
+- "similar" (Similar): Cópia de marca — nome comercial próprio, mesmo princípio ativo, outro laboratório (ex: Clopam)
+- "generic" (Genérico): Sem marca comercial, vendido pelo nome do princípio ativo (ex: "Clonazepam Genérico EMS")
+
+REGRAS:
+1. Extraia TODOS os produtos mencionados na conversa, classificando cada um
+2. Capture o nome exatamente como foi mencionado pela farmácia
+3. Identifique o laboratório/fabricante quando mencionado
+4. Extraia preços EXATOS — nunca invente valores
+5. Identifique detalhes de apresentação (dosagem, quantidade, forma) quando mencionados
+6. Registre se a farmácia pediu receita/prescrição
+7. Registre se a farmácia ofereceu entrega/delivery
+8. Avalie a qualidade da conversa e cooperação da farmácia
+9. Se um produto não foi discutido explicitamente, NÃO o inclua nos findings`;
+
+export function buildEnrichedExtractorMessages(
+  conversationHistory: { role: 'user' | 'assistant'; content: string }[],
+  referenceProduct: string,
+  campaignProducts?: string[],
+) {
+  const transcript = conversationHistory
+    .map((m) => `${m.role === 'assistant' ? 'MYSTERY SHOPPER' : 'FARMÁCIA'}: ${m.content}`)
+    .join('\n');
+
+  const productsContext = campaignProducts?.length
+    ? `\nPRODUTOS DA CAMPANHA: ${campaignProducts.join(', ')}`
+    : '';
+
+  const userContent = `PRODUTO DE REFERÊNCIA: ${referenceProduct}
+${productsContext}
+
+TRANSCRIÇÃO COMPLETA DA CONVERSA:
+${transcript}
+
+Analise a conversa e extraia todos os dados estruturados.`;
+
+  return [{ role: 'user' as const, content: userContent }];
+}
+
+export const ENRICHED_EXTRACTOR_TOOL = {
+  name: 'enriched_extraction',
+  description: 'Extrai dados estruturados enriquecidos de uma conversa com farmácia',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      reference_product: { type: 'string', description: 'Nome do produto de referência da campanha' },
+      findings: {
+        type: 'array',
+        description: 'Dados de cada produto mencionado na conversa',
+        items: {
+          type: 'object',
+          properties: {
+            product_name_mentioned: { type: 'string', description: 'Nome como mencionado pela farmácia' },
+            product_type: { type: 'string', enum: ['reference', 'similar', 'generic'] },
+            laboratory: { type: 'string', description: 'Laboratório/fabricante' },
+            is_available: { type: 'boolean' },
+            price: { type: 'number', description: 'Preço em BRL' },
+            price_currency: { type: 'string', default: 'BRL' },
+            presentation: {
+              type: 'object',
+              properties: {
+                dosage: { type: 'string' },
+                quantity: { type: 'number' },
+                form: { type: 'string' },
+              },
+            },
+            notes: { type: 'string' },
+          },
+          required: ['product_name_mentioned', 'product_type'],
+        },
+      },
+      conversation_quality: { type: 'string', enum: ['complete', 'partial', 'poor'] },
+      pharmacy_responsiveness: { type: 'string', enum: ['cooperative', 'neutral', 'uncooperative'] },
+      pharmacy_asked_for_prescription: { type: 'boolean' },
+      pharmacy_offered_delivery: { type: 'boolean' },
+    },
+    required: ['reference_product', 'findings', 'conversation_quality', 'pharmacy_responsiveness', 'pharmacy_asked_for_prescription', 'pharmacy_offered_delivery'],
+  },
+};
+
 export const EXTRACTOR_TOOL = {
   name: 'extract_data',
   description: 'Extrai dados estruturados da conversa com a farmácia',
