@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { Queue, type ConnectionOptions } from 'bullmq';
-import { campaigns, campaignPharmacies, campaignProducts, type Db } from '@pharma/db';
+import { campaigns, campaignPharmacies, campaignProducts, products, anvisaProducts, type Db } from '@pharma/db';
 import { CampaignSettingsSchema } from '@pharma/shared';
 
 export function createCampaignRoutes(db: Db, redis: ConnectionOptions) {
@@ -48,9 +48,49 @@ export function createCampaignRoutes(db: Db, redis: ConnectionOptions) {
       );
     }
 
-    if (body.productIds?.length) {
+    // Support both legacy productIds (from products table) and anvisaProductIds (from Anvisa catalog)
+    const allProductIds: string[] = [...(body.productIds ?? [])];
+
+    if (body.anvisaProductIds?.length) {
+      // Auto-create products entries for each Anvisa product
+      const anvisaRows = await db
+        .select()
+        .from(anvisaProducts)
+        .where(inArray(anvisaProducts.id, body.anvisaProductIds));
+
+      const typeMap: Record<string, 'reference' | 'similar' | 'generic'> = {
+        'Novo': 'reference',
+        'Similar': 'similar',
+        'Genérico': 'generic',
+      };
+
+      for (const anvisa of anvisaRows) {
+        // Check if a product already exists linked to this Anvisa product
+        const [existing] = await db
+          .select({ id: products.id })
+          .from(products)
+          .where(eq(products.anvisaProductId, anvisa.id))
+          .limit(1);
+
+        if (existing) {
+          allProductIds.push(existing.id);
+        } else {
+          const [newProduct] = await db.insert(products).values({
+            name: anvisa.produto,
+            activeIngredient: anvisa.substancia,
+            brand: anvisa.laboratorio,
+            dosage: anvisa.apresentacao,
+            productType: typeMap[anvisa.tipoProduto] ?? 'reference' as const,
+            anvisaProductId: anvisa.id,
+          }).returning();
+          if (newProduct) allProductIds.push(newProduct.id);
+        }
+      }
+    }
+
+    if (allProductIds.length > 0) {
       await db.insert(campaignProducts).values(
-        body.productIds.map((productId: string) => ({
+        allProductIds.map((productId: string) => ({
           campaignId: campaign!.id,
           productId,
         })),

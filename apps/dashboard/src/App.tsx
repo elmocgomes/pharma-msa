@@ -9,7 +9,7 @@ import { ConversationDetailPage } from '@/pages/ConversationDetailPage';
 import { PharmaciesPage } from '@/pages/PharmaciesPage';
 import { ProductsPage } from '@/pages/ProductsPage';
 import { PromptsPage } from '@/pages/PromptsPage';
-import { AnvisaPage } from '@/pages/AnvisaPage';
+import { Navigate } from 'react-router-dom';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,7 +34,7 @@ export default function App() {
             <Route path="/pharmacies" element={<PharmaciesPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/prompts" element={<PromptsPage />} />
-            <Route path="/anvisa" element={<AnvisaPage />} />
+            <Route path="/anvisa" element={<Navigate to="/products" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

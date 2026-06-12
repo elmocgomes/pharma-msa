@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { eq, inArray } from 'drizzle-orm';
 import {
   campaignGroups, campaigns, campaignPharmacies, campaignProducts,
-  waSessions, pharmacies, type Db,
+  waSessions, pharmacies, products, anvisaProducts, type Db,
 } from '@pharma/db';
 import type { CampaignSettings } from '@pharma/shared';
 
@@ -34,13 +34,52 @@ export function createCampaignGroupRoutes(db: Db) {
     const body = await c.req.json<{
       name: string;
       scriptId: string;
-      productIds: string[];
+      productIds?: string[];
+      anvisaProductIds?: string[];
       targetStates: string[];
       settings?: CampaignSettings;
     }>();
 
-    if (!body.name || !body.scriptId || !body.productIds?.length || !body.targetStates?.length) {
-      return c.json({ error: 'name, scriptId, productIds, and targetStates are required' }, 400);
+    const hasProducts = (body.productIds?.length ?? 0) > 0 || (body.anvisaProductIds?.length ?? 0) > 0;
+    if (!body.name || !body.scriptId || !hasProducts || !body.targetStates?.length) {
+      return c.json({ error: 'name, scriptId, products (productIds or anvisaProductIds), and targetStates are required' }, 400);
+    }
+
+    // Resolve Anvisa product IDs to products table IDs
+    const resolvedProductIds: string[] = [...(body.productIds ?? [])];
+    if (body.anvisaProductIds?.length) {
+      const anvisaRows = await db
+        .select()
+        .from(anvisaProducts)
+        .where(inArray(anvisaProducts.id, body.anvisaProductIds));
+
+      const typeMap: Record<string, 'reference' | 'similar' | 'generic'> = {
+        'Novo': 'reference',
+        'Similar': 'similar',
+        'Genérico': 'generic',
+      };
+
+      for (const anvisa of anvisaRows) {
+        const [existing] = await db
+          .select({ id: products.id })
+          .from(products)
+          .where(eq(products.anvisaProductId, anvisa.id))
+          .limit(1);
+
+        if (existing) {
+          resolvedProductIds.push(existing.id);
+        } else {
+          const [newProduct] = await db.insert(products).values({
+            name: anvisa.produto,
+            activeIngredient: anvisa.substancia,
+            brand: anvisa.laboratorio,
+            dosage: anvisa.apresentacao,
+            productType: typeMap[anvisa.tipoProduto] ?? 'reference' as const,
+            anvisaProductId: anvisa.id,
+          }).returning();
+          if (newProduct) resolvedProductIds.push(newProduct.id);
+        }
+      }
     }
 
     // Find sessions for each target state
@@ -93,7 +132,7 @@ export function createCampaignGroupRoutes(db: Db) {
       .values({
         name: body.name,
         scriptId: body.scriptId,
-        productIds: body.productIds,
+        productIds: resolvedProductIds,
         targetStates: body.targetStates,
         settings: defaultSettings,
       })
@@ -129,9 +168,9 @@ export function createCampaignGroupRoutes(db: Db) {
       }
 
       // Link products
-      if (body.productIds.length > 0) {
+      if (resolvedProductIds.length > 0) {
         await db.insert(campaignProducts).values(
-          body.productIds.map((pid) => ({
+          resolvedProductIds.map((pid) => ({
             campaignId: campaign!.id,
             productId: pid,
           })),

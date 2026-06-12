@@ -1,21 +1,35 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api, type AnvisaProduct } from '@/lib/api';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty';
-import { Pill, Plus, Trash2, Search, Database, Download } from 'lucide-react';
+import { Search, Database, ChevronLeft, ChevronRight, FlaskConical } from 'lucide-react';
+
+const BRAZILIAN_STATES = [
+  'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT',
+  'PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO',
+];
 
 export function ProductsPage() {
-  const qc = useQueryClient();
-  const products = useQuery({ queryKey: ['products'], queryFn: api.products.list });
-  const [showCreate, setShowCreate] = useState(false);
-  const [showAnvisaSearch, setShowAnvisaSearch] = useState(false);
+  const [q, setQ] = useState('');
+  const [tipo, setTipo] = useState('');
+  const [state, setState] = useState('SP');
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const deleteProduct = useMutation({
-    mutationFn: (id: string) => api.products.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+  const stats = useQuery({ queryKey: ['anvisa-stats'], queryFn: api.anvisa.stats });
+
+  const results = useQuery({
+    queryKey: ['anvisa-search', searchQuery, tipo, state, page],
+    queryFn: () => api.anvisa.search({ q: searchQuery, tipo: tipo || undefined, state, page, limit: 30 }),
+    enabled: true,
   });
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    setSearchQuery(q);
+    setPage(1);
+  }
 
   return (
     <div className="p-8 space-y-6">
@@ -23,314 +37,205 @@ export function ProductsPage() {
         <div>
           <h1 className="text-xl font-semibold">Products</h1>
           <p className="text-sm text-text-secondary mt-0.5">
-            Pharmaceutical products for inquiry ({products.data?.length ?? 0} products)
+            {stats.data ? `${stats.data.total.toLocaleString()} products from Anvisa CMED` : 'Pharmaceutical product catalog'}
           </p>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setShowAnvisaSearch(true)}>
-            <Database className="h-3.5 w-3.5" />
-            Import from Anvisa
-          </Button>
-          <Button size="sm" onClick={() => setShowCreate(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            Add Manually
-          </Button>
         </div>
       </div>
 
-      {showAnvisaSearch && <AnvisaImportPanel onClose={() => setShowAnvisaSearch(false)} />}
-      {showCreate && <CreateProductForm onClose={() => setShowCreate(false)} />}
+      {/* Stats bar — type filter chips */}
+      {stats.data && stats.data.total > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {stats.data.byType.map((t) => (
+            <button
+              key={t.tipoProduto}
+              onClick={() => { setTipo(tipo === t.tipoProduto ? '' : t.tipoProduto); setPage(1); }}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                tipo === t.tipoProduto
+                  ? 'bg-brand text-white'
+                  : 'bg-surface-dim text-text-secondary hover:bg-surface-hover'
+              }`}
+            >
+              {t.tipoProduto} ({t.count.toLocaleString()})
+            </button>
+          ))}
+        </div>
+      )}
 
-      {products.data?.length === 0 ? (
+      {/* Search bar */}
+      <form onSubmit={handleSearch} className="flex gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-tertiary" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by product name, active ingredient, or lab..."
+            className="w-full pl-10 pr-3 py-2 rounded-lg border border-border text-sm focus:outline-brand focus:border-brand"
+          />
+        </div>
+        <select
+          value={state}
+          onChange={(e) => { setState(e.target.value); setPage(1); }}
+          className="rounded-lg border border-border px-3 py-2 text-sm bg-surface focus:outline-brand"
+        >
+          {BRAZILIAN_STATES.map((uf) => (
+            <option key={uf} value={uf}>PMC {uf}</option>
+          ))}
+        </select>
+        <Button type="submit">
+          <Search className="h-3.5 w-3.5" />
+          Search
+        </Button>
+      </form>
+
+      {/* Results */}
+      {stats.data?.total === 0 ? (
         <EmptyState
-          icon={<Pill className="h-10 w-10" />}
-          title="No products"
-          description="Import products from the Anvisa CMED catalog or add them manually"
-          action={
-            <div className="flex gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setShowAnvisaSearch(true)}>
-                <Database className="h-3.5 w-3.5" /> Import from Anvisa
-              </Button>
-              <Button size="sm" onClick={() => setShowCreate(true)}>
-                <Plus className="h-3.5 w-3.5" /> Add Manually
-              </Button>
-            </div>
-          }
+          icon={<Database className="h-10 w-10" />}
+          title="No products loaded"
+          description="Import the Anvisa CMED price list first using the import script"
+        />
+      ) : results.data?.data.length === 0 ? (
+        <EmptyState
+          icon={<FlaskConical className="h-10 w-10" />}
+          title="No results"
+          description="Try a different search term or filter"
         />
       ) : (
-        <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
-          <div className="grid grid-cols-[1fr_180px_140px_140px_100px_60px] gap-4 px-6 py-3 bg-surface-dim border-b border-border-dim text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">
-            <span>Name</span>
-            <span>Active Ingredient</span>
-            <span>Brand / Lab</span>
-            <span>Dosage</span>
-            <span>Type</span>
-            <span></span>
+        <>
+          <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
+            <div className="grid grid-cols-[1fr_200px_120px_100px_100px_90px] gap-3 px-5 py-2.5 bg-surface-dim border-b border-border-dim text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">
+              <span>Product</span>
+              <span>Active Ingredient</span>
+              <span>Lab</span>
+              <span>Type</span>
+              <span>PMC ({state})</span>
+              <span>Tarja</span>
+            </div>
+            <div className="divide-y divide-border-dim">
+              {results.data?.data.map((p) => (
+                <ProductRow key={p.id} product={p} state={state} />
+              ))}
+            </div>
           </div>
-          <div className="divide-y divide-border-dim">
-            {products.data?.map((p) => (
-              <div key={p.id} className="grid grid-cols-[1fr_180px_140px_140px_100px_60px] gap-4 px-6 py-3 items-center">
-                <div>
-                  <p className="text-sm font-medium">{p.name}</p>
-                  {p.category && <p className="text-[10px] text-text-tertiary">{p.category}</p>}
-                </div>
-                <span className="text-xs text-text-secondary truncate">{p.activeIngredient ?? '-'}</span>
-                <span className="text-xs text-text-secondary truncate">{p.brand ?? '-'}</span>
-                <span className="text-xs text-text-tertiary truncate">{p.dosage ?? '-'}</span>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full inline-block text-center ${
-                  p.productType === 'generic' ? 'bg-green-100 text-green-700' :
-                  p.productType === 'similar' ? 'bg-amber-100 text-amber-700' :
-                  'bg-blue-100 text-blue-700'
-                }`}>
-                  {p.productType ?? 'reference'}
-                </span>
+
+          {/* Pagination */}
+          {results.data && results.data.pagination.pages > 1 && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-text-secondary">
+                Page {results.data.pagination.page} of {results.data.pagination.pages}
+                {' '}({results.data.pagination.total.toLocaleString()} results)
+              </span>
+              <div className="flex gap-2">
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
-                  onClick={() => { if (confirm(`Delete ${p.name}?`)) deleteProduct.mutate(p.id); }}
+                  disabled={page <= 1}
+                  onClick={() => setPage(page - 1)}
                 >
-                  <Trash2 className="h-3.5 w-3.5 text-text-tertiary" />
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Previous
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={page >= results.data.pagination.pages}
+                  onClick={() => setPage(page + 1)}
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-function AnvisaImportPanel({ onClose }: { onClose: () => void }) {
-  const qc = useQueryClient();
-  const [q, setQ] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
+function ProductRow({ product: p, state }: { product: AnvisaProduct; state: string }) {
+  const [expanded, setExpanded] = useState(false);
 
-  const results = useQuery({
-    queryKey: ['anvisa-import-search', searchQuery],
-    queryFn: () => api.anvisa.search({ q: searchQuery, limit: 20 }),
-    enabled: searchQuery.length > 0,
+  const competitors = useQuery({
+    queryKey: ['anvisa-competitors', p.substancia, state],
+    queryFn: () => api.anvisa.bySubstance(p.substancia, state),
+    enabled: expanded,
   });
 
-  const importMutation = useMutation({
-    mutationFn: (anvisaId: string) => api.products.fromAnvisa(anvisaId),
-    onSuccess: (_, anvisaId) => {
-      qc.invalidateQueries({ queryKey: ['products'] });
-      setImportedIds((prev) => new Set([...prev, anvisaId]));
-    },
-  });
-
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    setSearchQuery(q);
-  }
-
-  const typeColor: Record<string, string> = {
+  const typeColor = {
     'Novo': 'bg-blue-100 text-blue-700',
     'Similar': 'bg-amber-100 text-amber-700',
     'Genérico': 'bg-green-100 text-green-700',
     'Biológico': 'bg-purple-100 text-purple-700',
     'Específico': 'bg-gray-100 text-gray-700',
     'Fitoterápico': 'bg-emerald-100 text-emerald-700',
-  };
+  }[p.tipoProduto] ?? 'bg-gray-100 text-gray-700';
+
+  const tarjaColor = {
+    'Vermelha': 'text-red-600',
+    'Vermelha sob restrição': 'text-red-800',
+    'Preta': 'text-gray-900 font-bold',
+    'Sem Tarja': 'text-green-600',
+  }[p.tarja ?? ''] ?? 'text-text-tertiary';
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Database className="h-4 w-4" />
-          Import from Anvisa CMED (25,392 products)
-        </CardTitle>
-        <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <form onSubmit={handleSearch} className="flex gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-tertiary" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by product name, active ingredient, or lab..."
-              className="w-full pl-10 pr-3 py-2 rounded-lg border border-border text-sm focus:outline-brand focus:border-brand"
-              autoFocus
-            />
-          </div>
-          <Button type="submit">
-            <Search className="h-3.5 w-3.5" />
-            Search
-          </Button>
-        </form>
+    <>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full grid grid-cols-[1fr_200px_120px_100px_100px_90px] gap-3 px-5 py-2.5 text-left hover:bg-surface-hover transition-colors items-center"
+      >
+        <div>
+          <p className="text-sm font-medium">{p.produto}</p>
+          <p className="text-xs text-text-tertiary truncate">{p.apresentacao}</p>
+        </div>
+        <span className="text-xs text-text-secondary truncate">{p.substancia}</span>
+        <span className="text-xs text-text-tertiary truncate">{p.laboratorio ?? '-'}</span>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full text-center ${typeColor}`}>
+          {p.tipoProduto}
+        </span>
+        <span className="text-sm font-semibold tabular-nums">
+          {p.pmc != null ? `R$ ${p.pmc.toFixed(2)}` : '-'}
+        </span>
+        <span className={`text-xs ${tarjaColor}`}>{p.tarja ?? '-'}</span>
+      </button>
 
-        {!searchQuery ? (
-          <p className="text-sm text-text-tertiary text-center py-4">
-            Search the Anvisa catalog to find products to import
-          </p>
-        ) : results.isLoading ? (
-          <p className="text-sm text-text-tertiary text-center py-4">Searching...</p>
-        ) : results.data?.data.length === 0 ? (
-          <p className="text-sm text-text-tertiary text-center py-4">No results found</p>
-        ) : (
-          <div className="max-h-96 overflow-y-auto rounded-lg border border-border divide-y divide-border-dim">
-            {results.data?.data.map((p: AnvisaProduct) => {
-              const imported = importedIds.has(p.id);
-              return (
-                <div key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-hover">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{p.produto}</p>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
-                        typeColor[p.tipoProduto] ?? 'bg-gray-100 text-gray-700'
-                      }`}>
-                        {p.tipoProduto}
-                      </span>
+      {/* Expanded: show competitors (same substance) */}
+      {expanded && (
+        <div className="bg-surface-dim px-5 py-3 border-t border-border-dim">
+          <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
+            Competing Products ({p.substancia}) — {competitors.data?.count ?? '...'} total
+          </h4>
+          {competitors.isLoading ? (
+            <p className="text-xs text-text-tertiary">Loading competitors...</p>
+          ) : (
+            <div className="grid grid-cols-[1fr_200px_100px_100px_80px] gap-2 text-xs">
+              {competitors.data?.products
+                .filter((c) => c.id !== p.id)
+                .slice(0, 20)
+                .map((c) => (
+                  <div key={c.id} className="contents">
+                    <div>
+                      <span className="font-medium">{c.produto}</span>
+                      <span className="text-text-tertiary ml-1">{c.apresentacao.slice(0, 40)}</span>
                     </div>
-                    <p className="text-xs text-text-tertiary truncate">{p.apresentacao}</p>
-                    <div className="flex gap-3 mt-0.5 text-[10px] text-text-tertiary">
-                      <span>{p.substancia}</span>
-                      {p.laboratorio && <span>| {p.laboratorio}</span>}
-                      {p.ean && <span>| EAN: {p.ean}</span>}
-                    </div>
+                    <span className="text-text-tertiary truncate">{c.laboratorio ?? '-'}</span>
+                    <span className={`font-medium px-1.5 py-0.5 rounded text-center ${
+                      c.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
+                      c.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
+                      'bg-blue-50 text-blue-700'
+                    }`}>
+                      {c.tipoProduto}
+                    </span>
+                    <span className="tabular-nums font-medium">
+                      {c.pmc != null ? `R$ ${c.pmc.toFixed(2)}` : '-'}
+                    </span>
+                    <span className="text-text-tertiary">{c.ean ?? '-'}</span>
                   </div>
-                  <Button
-                    size="sm"
-                    variant={imported ? 'ghost' : 'secondary'}
-                    disabled={imported || importMutation.isPending}
-                    onClick={() => importMutation.mutate(p.id)}
-                  >
-                    {imported ? (
-                      <>Imported</>
-                    ) : (
-                      <>
-                        <Download className="h-3.5 w-3.5" />
-                        Import
-                      </>
-                    )}
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {results.data && results.data.pagination.total > 20 && (
-          <p className="text-xs text-text-tertiary text-center">
-            Showing 20 of {results.data.pagination.total.toLocaleString()} results. Refine your search for more specific results.
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function CreateProductForm({ onClose }: { onClose: () => void }) {
-  const qc = useQueryClient();
-  const [name, setName] = useState('');
-  const [activeIngredient, setActiveIngredient] = useState('');
-  const [brand, setBrand] = useState('');
-  const [category, setCategory] = useState('');
-  const [dosage, setDosage] = useState('');
-  const [productType, setProductType] = useState('reference');
-
-  const create = useMutation({
-    mutationFn: (data: { name: string; activeIngredient?: string; brand?: string; category?: string; dosage?: string; productType?: string }) =>
-      api.products.create(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['products'] });
-      onClose();
-    },
-  });
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Add Product Manually</CardTitle>
-        <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-      </CardHeader>
-      <CardContent>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!name) return;
-            create.mutate({
-              name,
-              activeIngredient: activeIngredient || undefined,
-              brand: brand || undefined,
-              category: category || undefined,
-              dosage: dosage || undefined,
-              productType,
-            });
-          }}
-          className="grid grid-cols-3 gap-3"
-        >
-          <div>
-            <label className="text-xs font-medium text-text-secondary">Product Name *</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Losartana 50mg"
-              required
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-text-secondary">Active Ingredient</label>
-            <input
-              value={activeIngredient}
-              onChange={(e) => setActiveIngredient(e.target.value)}
-              placeholder="e.g. Losartana Potassica"
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-text-secondary">Brand / Lab</label>
-            <input
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              placeholder="e.g. Merck"
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-text-secondary">Category</label>
-            <input
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="e.g. Anti-hipertensivo"
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-text-secondary">Dosage / Presentation</label>
-            <input
-              value={dosage}
-              onChange={(e) => setDosage(e.target.value)}
-              placeholder="e.g. 50mg comprimido"
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-text-secondary">Type</label>
-            <select
-              value={productType}
-              onChange={(e) => setProductType(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand bg-surface"
-            >
-              <option value="reference">Reference (Original)</option>
-              <option value="similar">Similar (Branded Generic)</option>
-              <option value="generic">Generic</option>
-            </select>
-          </div>
-          <div className="col-span-3 flex justify-end">
-            <Button type="submit" disabled={create.isPending || !name}>
-              <Pill className="h-3.5 w-3.5" />
-              {create.isPending ? 'Adding...' : 'Add Product'}
-            </Button>
-          </div>
-          {create.isError && (
-            <p className="col-span-3 text-sm text-red-500">{(create.error as Error).message}</p>
+                ))}
+            </div>
           )}
-        </form>
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </>
   );
 }

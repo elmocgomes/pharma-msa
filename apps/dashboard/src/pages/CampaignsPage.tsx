@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, type Script, type Session, type Pharmacy, type Product } from '@/lib/api';
+import { api, type Script, type Session, type Pharmacy, type AnvisaProduct } from '@/lib/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty';
-import { Megaphone, Play, Pause, BarChart3, ChevronDown, ChevronUp, Plus, Globe, MapPin } from 'lucide-react';
+import { Megaphone, Play, Pause, BarChart3, ChevronDown, ChevronUp, Plus, Globe, MapPin, Search, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 function CampaignReport({ campaignId }: { campaignId: string }) {
@@ -285,15 +285,21 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
   const [scriptId, setScriptId] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [selectedPharmacies, setSelectedPharmacies] = useState<string[]>([]);
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [selectedAnvisaProducts, setSelectedAnvisaProducts] = useState<AnvisaProduct[]>([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
 
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions.list });
   const scripts = useQuery({ queryKey: ['scripts'], queryFn: api.scripts.list });
   const pharmacies = useQuery({ queryKey: ['pharmacies'], queryFn: api.pharmacies.list });
-  const products = useQuery({ queryKey: ['products'], queryFn: api.products.list });
+  const anvisaResults = useQuery({
+    queryKey: ['anvisa-campaign-search', productSearchQuery],
+    queryFn: () => api.anvisa.search({ q: productSearchQuery, limit: 10 }),
+    enabled: productSearchQuery.length > 0,
+  });
 
   const create = useMutation({
-    mutationFn: (data: { name: string; scriptId: string; waSessionId: string; pharmacyIds: string[]; productIds: string[] }) =>
+    mutationFn: (data: { name: string; scriptId: string; waSessionId: string; pharmacyIds: string[]; anvisaProductIds: string[] }) =>
       api.campaigns.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['campaigns'] });
@@ -301,11 +307,21 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
     },
   });
 
-  function toggleItem(id: string, list: string[], setter: (v: string[]) => void) {
-    setter(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
+  function togglePharmacy(id: string) {
+    setSelectedPharmacies((prev) => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
 
-  const canSubmit = name && scriptId && sessionId && selectedPharmacies.length > 0 && selectedProducts.length > 0;
+  function addProduct(p: AnvisaProduct) {
+    if (!selectedAnvisaProducts.find((s) => s.id === p.id)) {
+      setSelectedAnvisaProducts((prev) => [...prev, p]);
+    }
+  }
+
+  function removeProduct(id: string) {
+    setSelectedAnvisaProducts((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  const canSubmit = name && scriptId && sessionId && selectedPharmacies.length > 0 && selectedAnvisaProducts.length > 0;
 
   return (
     <Card>
@@ -323,7 +339,7 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
               scriptId,
               waSessionId: sessionId,
               pharmacyIds: selectedPharmacies,
-              productIds: selectedProducts,
+              anvisaProductIds: selectedAnvisaProducts.map((p) => p.id),
             });
           }}
           className="space-y-4"
@@ -384,7 +400,7 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
                     <input
                       type="checkbox"
                       checked={selectedPharmacies.includes(ph.id)}
-                      onChange={() => toggleItem(ph.id, selectedPharmacies, setSelectedPharmacies)}
+                      onChange={() => togglePharmacy(ph.id)}
                       className="rounded border-border"
                     />
                     <span className="text-sm flex-1">{ph.name}</span>
@@ -395,29 +411,79 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Products selection */}
+          {/* Products selection — search Anvisa catalog */}
           <div>
             <label className="text-xs font-medium text-text-secondary">
-              Products * ({selectedProducts.length} selected)
+              Products * ({selectedAnvisaProducts.length} selected)
             </label>
-            <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-border divide-y divide-border-dim">
-              {products.data?.length === 0 ? (
-                <p className="text-xs text-text-tertiary px-3 py-2">No products yet. Add some first.</p>
-              ) : (
-                products.data?.map((p: Product) => (
-                  <label key={p.id} className="flex items-center gap-2 px-3 py-2 hover:bg-surface-hover cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedProducts.includes(p.id)}
-                      onChange={() => toggleItem(p.id, selectedProducts, setSelectedProducts)}
-                      className="rounded border-border"
-                    />
-                    <span className="text-sm flex-1">{p.name}</span>
-                    <span className="text-xs text-text-tertiary">{p.brand ?? '-'}</span>
-                  </label>
-                ))
-              )}
+
+            {/* Selected products chips */}
+            {selectedAnvisaProducts.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2 mb-2">
+                {selectedAnvisaProducts.map((p) => (
+                  <span key={p.id} className="flex items-center gap-1 bg-brand-dim text-brand text-xs font-medium px-2 py-1 rounded-lg">
+                    {p.produto}
+                    <button type="button" onClick={() => removeProduct(p.id)} className="hover:text-brand/70">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Search input */}
+            <div className="flex gap-2 mt-1">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-text-tertiary" />
+                <input
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setProductSearchQuery(productSearch); } }}
+                  placeholder="Search product name or active ingredient..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border text-sm focus:outline-brand focus:border-brand"
+                />
+              </div>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setProductSearchQuery(productSearch)}>
+                Search
+              </Button>
             </div>
+
+            {/* Search results */}
+            {productSearchQuery && anvisaResults.data && (
+              <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border-dim">
+                {anvisaResults.data.data.length === 0 ? (
+                  <p className="text-xs text-text-tertiary px-3 py-2">No products found</p>
+                ) : (
+                  anvisaResults.data.data.map((p) => {
+                    const alreadySelected = selectedAnvisaProducts.some((s) => s.id === p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={alreadySelected}
+                        onClick={() => addProduct(p)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm ${
+                          alreadySelected ? 'opacity-50 cursor-default' : 'hover:bg-surface-hover cursor-pointer'
+                        }`}
+                      >
+                        <span className="flex-1 truncate">
+                          <span className="font-medium">{p.produto}</span>
+                          <span className="text-text-tertiary ml-1 text-xs">{p.substancia}</span>
+                        </span>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                          p.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
+                          p.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
+                          'bg-blue-50 text-blue-700'
+                        }`}>
+                          {p.tipoProduto}
+                        </span>
+                        {alreadySelected && <span className="text-[10px] text-text-tertiary">Added</span>}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end">
@@ -501,11 +567,18 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [scriptId, setScriptId] = useState('');
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [selectedAnvisaProducts, setSelectedAnvisaProducts] = useState<AnvisaProduct[]>([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [showProductResults, setShowProductResults] = useState(false);
 
   const scripts = useQuery({ queryKey: ['scripts'], queryFn: api.scripts.list });
-  const products = useQuery({ queryKey: ['products'], queryFn: api.products.list });
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions.list });
+
+  const anvisaResults = useQuery({
+    queryKey: ['anvisa-search', productSearch],
+    queryFn: () => api.anvisa.search({ q: productSearch, limit: 10 }),
+    enabled: productSearch.length >= 2,
+  });
 
   // Show which states have sessions assigned
   const statesWithSessions = new Set(
@@ -513,7 +586,7 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
   );
 
   const create = useMutation({
-    mutationFn: (data: { name: string; scriptId: string; productIds: string[]; targetStates: string[] }) =>
+    mutationFn: (data: { name: string; scriptId: string; anvisaProductIds: string[]; targetStates: string[] }) =>
       api.campaignGroups.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['campaigns'] });
@@ -526,11 +599,19 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
     setSelectedStates((prev) => prev.includes(st) ? prev.filter((s) => s !== st) : [...prev, st]);
   }
 
-  function toggleProduct(id: string) {
-    setSelectedProducts((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]);
+  function addAnvisaProduct(p: AnvisaProduct) {
+    if (!selectedAnvisaProducts.find((s) => s.id === p.id)) {
+      setSelectedAnvisaProducts((prev) => [...prev, p]);
+    }
+    setProductSearch('');
+    setShowProductResults(false);
   }
 
-  const canSubmit = name && scriptId && selectedStates.length > 0 && selectedProducts.length > 0;
+  function removeAnvisaProduct(id: string) {
+    setSelectedAnvisaProducts((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  const canSubmit = name && scriptId && selectedStates.length > 0 && selectedAnvisaProducts.length > 0;
 
   // Check if all selected states have sessions
   const statesWithoutSession = selectedStates.filter((st) => !statesWithSessions.has(st));
@@ -549,7 +630,12 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
           onSubmit={(e) => {
             e.preventDefault();
             if (!canSubmit) return;
-            create.mutate({ name, scriptId, productIds: selectedProducts, targetStates: selectedStates });
+            create.mutate({
+              name,
+              scriptId,
+              anvisaProductIds: selectedAnvisaProducts.map((p) => p.id),
+              targetStates: selectedStates,
+            });
           }}
           className="space-y-4"
         >
@@ -618,27 +704,68 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          {/* Products */}
+          {/* Products — Anvisa search */}
           <div>
             <label className="text-xs font-medium text-text-secondary">
-              Products * ({selectedProducts.length} selected)
+              Products * ({selectedAnvisaProducts.length} selected)
             </label>
-            <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-border divide-y divide-border-dim">
-              {products.data?.length === 0 ? (
-                <p className="text-xs text-text-tertiary px-3 py-2">No products yet. Add some first.</p>
-              ) : (
-                products.data?.map((p) => (
-                  <label key={p.id} className="flex items-center gap-2 px-3 py-2 hover:bg-surface-hover cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedProducts.includes(p.id)}
-                      onChange={() => toggleProduct(p.id)}
-                      className="rounded border-border"
-                    />
-                    <span className="text-sm flex-1">{p.name}</span>
-                    <span className="text-xs text-text-tertiary">{p.brand ?? '-'}</span>
-                  </label>
-                ))
+
+            {/* Selected product chips */}
+            {selectedAnvisaProducts.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {selectedAnvisaProducts.map((p) => (
+                  <span
+                    key={p.id}
+                    className="inline-flex items-center gap-1 rounded-full bg-brand/10 text-brand px-2.5 py-1 text-xs"
+                  >
+                    {p.produto}
+                    <button type="button" onClick={() => removeAnvisaProduct(p.id)} className="hover:text-red-500">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Search input */}
+            <div className="relative mt-1.5">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-text-tertiary" />
+              <input
+                value={productSearch}
+                onChange={(e) => {
+                  setProductSearch(e.target.value);
+                  setShowProductResults(true);
+                }}
+                onFocus={() => productSearch.length >= 2 && setShowProductResults(true)}
+                placeholder="Search Anvisa catalog (name, substance, lab)..."
+                className="w-full rounded-lg border border-border pl-8 pr-3 py-2 text-sm focus:outline-brand focus:border-brand"
+              />
+
+              {/* Dropdown results */}
+              {showProductResults && productSearch.length >= 2 && (
+                <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg divide-y divide-border-dim">
+                  {anvisaResults.isLoading ? (
+                    <p className="text-xs text-text-tertiary px-3 py-2">Searching...</p>
+                  ) : anvisaResults.data?.data.length === 0 ? (
+                    <p className="text-xs text-text-tertiary px-3 py-2">No results found</p>
+                  ) : (
+                    anvisaResults.data?.data
+                      .filter((r) => !selectedAnvisaProducts.find((s) => s.id === r.id))
+                      .map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => addAnvisaProduct(r)}
+                          className="w-full text-left px-3 py-2 hover:bg-surface-hover"
+                        >
+                          <p className="text-sm font-medium">{r.produto}</p>
+                          <p className="text-[11px] text-text-tertiary">
+                            {r.substancia} · {r.laboratorio ?? '—'} · {r.tipoProduto}
+                          </p>
+                        </button>
+                      ))
+                  )}
+                </div>
               )}
             </div>
           </div>

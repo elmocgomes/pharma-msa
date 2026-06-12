@@ -43,7 +43,7 @@ export const api = {
   campaigns: {
     list: () => request<Campaign[]>('/campaigns'),
     get: (id: string) => request<Campaign>(`/campaigns/${id}`),
-    create: (data: { name: string; scriptId: string; waSessionId: string; pharmacyIds: string[]; productIds: string[]; settings?: Record<string, unknown> }) =>
+    create: (data: { name: string; scriptId: string; waSessionId: string; pharmacyIds: string[]; productIds?: string[]; anvisaProductIds?: string[]; settings?: Record<string, unknown> }) =>
       request<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
     start: (id: string) => request<{ status: string }>(`/campaigns/${id}/start`, { method: 'POST' }),
     pause: (id: string) => request<{ status: string }>(`/campaigns/${id}/pause`, { method: 'POST' }),
@@ -120,7 +120,7 @@ export const api = {
   campaignGroups: {
     list: () => request<CampaignGroup[]>('/campaign-groups'),
     get: (id: string) => request<CampaignGroupDetail>(`/campaign-groups/${id}`),
-    create: (data: { name: string; scriptId: string; productIds: string[]; targetStates: string[] }) =>
+    create: (data: { name: string; scriptId: string; productIds?: string[]; anvisaProductIds?: string[]; targetStates: string[] }) =>
       request<{ group: CampaignGroup; campaigns: Campaign[] }>('/campaign-groups', { method: 'POST', body: JSON.stringify(data) }),
   },
 };
