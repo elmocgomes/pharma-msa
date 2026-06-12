@@ -5,9 +5,10 @@ import {
   insertMessageIdempotent, getRecentMessages,
 } from '@pharma/db';
 import { FlowTreeSchema, type ClassifyNode } from '@pharma/shared';
-import { NavigatorAgent, RecoveryAgent, type LlmProvider, type LlmMessage } from '@pharma/ai';
+import { RecoveryAgent, type LlmProvider, type LlmMessage, NavigatorAgent } from '@pharma/ai';
 import { WhatsAppClient } from '@pharma/whatsapp';
 import { transition } from '../engine/state-machine.js';
+import { TieredClassifier } from '../engine/classifier.js';
 import type { ParseJobData } from '../queues/definitions.js';
 
 export function createParseWorker(
@@ -20,6 +21,7 @@ export function createParseWorker(
   const conversationQueue = new Queue('conversation', { connection: redis });
   const navigator = new NavigatorAgent(navigatorProvider);
   const recovery = new RecoveryAgent(recoveryProvider);
+  const classifier = new TieredClassifier(navigator);
 
   return new Worker<ParseJobData>(
     'parse',
@@ -76,26 +78,45 @@ export function createParseWorker(
         content: m.content,
       }));
 
+      // Build persona from session
+      const [session] = await db.select().from(waSessions).where(eq(waSessions.id, conv.waSessionId));
+      const persona = {
+        name: session?.personaName ?? 'Cliente',
+        cpf: session?.personaCpf ?? undefined,
+        neighborhood: (session?.personaDetails as Record<string, unknown>)?.neighborhood as string | undefined,
+        age: (session?.personaDetails as Record<string, unknown>)?.age as number | undefined,
+        backstory: (session?.personaDetails as Record<string, unknown>)?.backstory as string | undefined,
+      };
+
       try {
-        const result = await navigator.classify({
-          pharmacyMessage: msg.content,
+        const result = await classifier.classify({
+          message: msg.content,
+          node: classifyNode,
           conversationHistory: history,
-          intent: classifyNode.intent,
-          branches: classifyNode.branches,
+          persona,
         });
 
-        if (result.confidence < 0.4 || result.is_personal_question) {
+        console.log(`[PARSE] ${conversationId} classified as tier=${result.tier} category=${result.category} confidence=${result.confidence}`);
+
+        // ── Handle personal question (Tier 0) ──
+        if (result.tier === 'personal' && result.personalResponse) {
+          await handlePersonalResponse(db, waClient, conv, result.personalResponse, traceId);
+          return;
+        }
+
+        // ── Handle recovery needed (Tier 3) ──
+        if (result.tier === 'recovery') {
           await handleRecovery(db, waClient, recovery, conv, classifyNode, msg.content, history, traceId);
           return;
         }
 
+        // ── Handle successful classification (Tier 1 or 2) ──
         const branch = classifyNode.branches.find((b) => b.category === result.category);
         if (!branch) {
           await handleRecovery(db, waClient, recovery, conv, classifyNode, msg.content, history, traceId);
           return;
         }
 
-        // Update node pointer BEFORE enqueuing conversation job to avoid race
         const [latest] = await db.select().from(conversations).where(eq(conversations.id, conversationId));
         if (!latest) return;
 
@@ -130,6 +151,54 @@ export function createParseWorker(
     },
     { connection: redis, concurrency: 10 },
   );
+}
+
+/**
+ * Handle personal question: send preset response, stay in waiting_response.
+ * Zero AI cost.
+ */
+async function handlePersonalResponse(
+  db: Db,
+  waClient: WhatsAppClient,
+  conv: typeof conversations.$inferSelect,
+  responseText: string,
+  traceId: string,
+) {
+  const [session] = await db.select().from(waSessions).where(eq(waSessions.id, conv.waSessionId));
+  if (!session) return;
+
+  const { pharmacies } = await import('@pharma/db');
+  const [pharmacy] = await db.select().from(pharmacies).where(eq(pharmacies.id, conv.pharmacyId));
+  if (!pharmacy) return;
+
+  // Natural delay
+  await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 3000));
+
+  await waClient.sendText({
+    session: session.name,
+    to: pharmacy.phoneNumber,
+    text: responseText,
+  });
+
+  const idempotencyKey = `out:${conv.id}:personal:${Date.now()}`;
+  await insertMessageIdempotent(db, {
+    conversationId: conv.id,
+    direction: 'outbound',
+    content: responseText,
+    idempotencyKey,
+    nodeId: conv.currentNodeId ?? undefined,
+  });
+
+  const [latest] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+  if (latest) {
+    await transition(db, {
+      conversationId: conv.id,
+      expectedVersion: latest.version,
+      newStatus: 'waiting_response',
+      traceId,
+      eventData: { personalResponse: responseText },
+    });
+  }
 }
 
 async function handleRecovery(

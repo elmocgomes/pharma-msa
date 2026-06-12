@@ -6,7 +6,7 @@ import {
 } from '@pharma/db';
 import { FlowTreeSchema, type FlowNode } from '@pharma/shared';
 import { WhatsAppClient } from '@pharma/whatsapp';
-import { interpolateMessage } from './message-builder.js';
+import { interpolateMessage, selectMessage } from './message-builder.js';
 import { transition } from './state-machine.js';
 import type { ConnectionOptions } from 'bullmq';
 
@@ -116,7 +116,8 @@ export class ScriptRunner {
     const [pharmacy] = await this.db.select().from(pharmacies).where(eq(pharmacies.id, conv.pharmacyId));
     if (!pharmacy) throw new Error(`Pharmacy ${conv.pharmacyId} not found`);
 
-    const message = interpolateMessage(node.message, conv.variables as Record<string, string>);
+    const selectedTemplate = selectMessage(node.message, node.variants, conv.id, node.id);
+    const message = interpolateMessage(selectedTemplate, conv.variables as Record<string, string>);
 
     if (node.delay_ms > 0) {
       await new Promise((resolve) => setTimeout(resolve, node.delay_ms));

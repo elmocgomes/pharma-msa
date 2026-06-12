@@ -27,7 +27,7 @@ export function selectMessage(
   const options = [message, ...variants];
   const seed = `${conversationId}:${nodeId}`;
   const hash = simpleHash(seed);
-  return options[hash % options.length];
+  return options[hash % options.length] ?? message;
 }
 
 function simpleHash(str: string): number {
