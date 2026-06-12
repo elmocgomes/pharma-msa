@@ -4,6 +4,7 @@ export const SendNodeSchema = z.object({
   type: z.literal('send'),
   id: z.string(),
   message: z.string(),
+  variants: z.array(z.string()).optional(),
   delay_ms: z.number().default(3000),
   next: z.string(),
 });
@@ -19,6 +20,13 @@ export const ClassifyNodeSchema = z.object({
   id: z.string(),
   intent: z.string(),
   branches: z.array(ClassifyBranchSchema).min(1),
+  rulePhase: z.string().optional(),
+  customRules: z.array(z.object({
+    category: z.string(),
+    patterns: z.array(z.string()),
+    antiPatterns: z.array(z.string()).optional(),
+    confidence: z.number(),
+  })).optional(),
   timeout_ms: z.number().default(300_000),
   timeout_next: z.string(),
   max_retries: z.number().default(2),
