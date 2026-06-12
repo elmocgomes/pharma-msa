@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty';
-import { Megaphone, Play, Pause, BarChart3, ChevronDown, ChevronUp, Plus, Globe, MapPin, Search, X } from 'lucide-react';
+import { Megaphone, Play, Pause, BarChart3, ChevronDown, ChevronUp, Plus, Globe, MapPin, Search, X, Users } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 function CampaignReport({ campaignId }: { campaignId: string }) {
@@ -288,6 +288,7 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
   const [selectedAnvisaProducts, setSelectedAnvisaProducts] = useState<AnvisaProduct[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [showCompetitors, setShowCompetitors] = useState(true);
 
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions.list });
   const scripts = useQuery({ queryKey: ['scripts'], queryFn: api.scripts.list });
@@ -296,6 +297,13 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
     queryKey: ['anvisa-campaign-search', productSearchQuery],
     queryFn: () => api.anvisa.search({ q: productSearchQuery, limit: 10 }),
     enabled: productSearchQuery.length > 0,
+  });
+
+  const firstProduct = selectedAnvisaProducts[0];
+  const competitors = useQuery({
+    queryKey: ['anvisa-competitors', firstProduct?.substancia],
+    queryFn: () => api.anvisa.bySubstance(firstProduct!.substancia),
+    enabled: !!firstProduct?.substancia,
   });
 
   const create = useMutation({
@@ -322,6 +330,10 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
   }
 
   const canSubmit = name && scriptId && sessionId && selectedPharmacies.length > 0 && selectedAnvisaProducts.length > 0;
+
+  const competitorList = (competitors.data?.products ?? []).filter(
+    (c) => !selectedAnvisaProducts.some((s) => s.id === c.id),
+  );
 
   return (
     <Card>
@@ -421,9 +433,10 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
             {selectedAnvisaProducts.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2 mb-2">
                 {selectedAnvisaProducts.map((p) => (
-                  <span key={p.id} className="flex items-center gap-1 bg-brand-dim text-brand text-xs font-medium px-2 py-1 rounded-lg">
-                    {p.produto}
-                    <button type="button" onClick={() => removeProduct(p.id)} className="hover:text-brand/70">
+                  <span key={p.id} className="flex items-center gap-1 bg-brand-dim text-brand text-xs font-medium px-2 py-1 rounded-lg max-w-xs">
+                    <span className="truncate">{p.produto}</span>
+                    <span className="text-brand/60 shrink-0">· {p.apresentacao}</span>
+                    <button type="button" onClick={() => removeProduct(p.id)} className="hover:text-brand/70 shrink-0">
                       <X className="h-3 w-3" />
                     </button>
                   </span>
@@ -466,21 +479,66 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
                           alreadySelected ? 'opacity-50 cursor-default' : 'hover:bg-surface-hover cursor-pointer'
                         }`}
                       >
-                        <span className="flex-1 truncate">
+                        <div className="flex-1 min-w-0">
                           <span className="font-medium">{p.produto}</span>
-                          <span className="text-text-tertiary ml-1 text-xs">{p.substancia}</span>
-                        </span>
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                          <p className="text-[11px] text-text-tertiary truncate">{p.apresentacao}</p>
+                        </div>
+                        <span className="text-[11px] text-text-tertiary shrink-0">{p.laboratorio ?? '—'}</span>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
                           p.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
                           p.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
                           'bg-blue-50 text-blue-700'
                         }`}>
                           {p.tipoProduto}
                         </span>
-                        {alreadySelected && <span className="text-[10px] text-text-tertiary">Added</span>}
+                        {alreadySelected && <span className="text-[10px] text-text-tertiary shrink-0">Added</span>}
                       </button>
                     );
                   })
+                )}
+              </div>
+            )}
+
+            {/* Competitors panel — same substance as first selected product */}
+            {firstProduct && competitorList.length > 0 && (
+              <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/50">
+                <button
+                  type="button"
+                  onClick={() => setShowCompetitors(!showCompetitors)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                >
+                  <Users className="h-3.5 w-3.5 text-purple-600" />
+                  <span className="text-xs font-medium text-purple-700 flex-1">
+                    Competitors ({firstProduct.substancia}) — {competitorList.length} products
+                  </span>
+                  {showCompetitors
+                    ? <ChevronUp className="h-3.5 w-3.5 text-purple-400" />
+                    : <ChevronDown className="h-3.5 w-3.5 text-purple-400" />}
+                </button>
+                {showCompetitors && (
+                  <div className="max-h-40 overflow-y-auto border-t border-purple-200 divide-y divide-purple-100">
+                    {competitorList.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => addProduct(c)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-purple-100/50"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium">{c.produto}</span>
+                          <p className="text-[11px] text-text-tertiary truncate">{c.apresentacao}</p>
+                        </div>
+                        <span className="text-[11px] text-text-tertiary shrink-0">{c.laboratorio ?? '—'}</span>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
+                          c.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
+                          c.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
+                          'bg-blue-50 text-blue-700'
+                        }`}>
+                          {c.tipoProduto}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -570,14 +628,22 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
   const [selectedAnvisaProducts, setSelectedAnvisaProducts] = useState<AnvisaProduct[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [showProductResults, setShowProductResults] = useState(false);
+  const [showCompetitors, setShowCompetitors] = useState(true);
 
   const scripts = useQuery({ queryKey: ['scripts'], queryFn: api.scripts.list });
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions.list });
 
   const anvisaResults = useQuery({
-    queryKey: ['anvisa-search', productSearch],
+    queryKey: ['anvisa-group-search', productSearch],
     queryFn: () => api.anvisa.search({ q: productSearch, limit: 10 }),
     enabled: productSearch.length >= 2,
+  });
+
+  const firstProduct = selectedAnvisaProducts[0];
+  const competitors = useQuery({
+    queryKey: ['anvisa-competitors-group', firstProduct?.substancia],
+    queryFn: () => api.anvisa.bySubstance(firstProduct!.substancia),
+    enabled: !!firstProduct?.substancia,
   });
 
   // Show which states have sessions assigned
@@ -615,6 +681,10 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
 
   // Check if all selected states have sessions
   const statesWithoutSession = selectedStates.filter((st) => !statesWithSessions.has(st));
+
+  const competitorList = (competitors.data?.products ?? []).filter(
+    (c) => !selectedAnvisaProducts.some((s) => s.id === c.id),
+  );
 
   return (
     <Card>
@@ -716,10 +786,11 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
                 {selectedAnvisaProducts.map((p) => (
                   <span
                     key={p.id}
-                    className="inline-flex items-center gap-1 rounded-full bg-brand/10 text-brand px-2.5 py-1 text-xs"
+                    className="inline-flex items-center gap-1 rounded-full bg-brand/10 text-brand px-2.5 py-1 text-xs max-w-xs"
                   >
-                    {p.produto}
-                    <button type="button" onClick={() => removeAnvisaProduct(p.id)} className="hover:text-red-500">
+                    <span className="truncate">{p.produto}</span>
+                    <span className="text-brand/60 shrink-0">· {p.apresentacao}</span>
+                    <button type="button" onClick={() => removeAnvisaProduct(p.id)} className="hover:text-red-500 shrink-0">
                       <X className="h-3 w-3" />
                     </button>
                   </span>
@@ -758,9 +829,19 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
                           onClick={() => addAnvisaProduct(r)}
                           className="w-full text-left px-3 py-2 hover:bg-surface-hover"
                         >
-                          <p className="text-sm font-medium">{r.produto}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium flex-1">{r.produto}</span>
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
+                              r.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
+                              r.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
+                              'bg-blue-50 text-blue-700'
+                            }`}>
+                              {r.tipoProduto}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-text-tertiary truncate">{r.apresentacao}</p>
                           <p className="text-[11px] text-text-tertiary">
-                            {r.substancia} · {r.laboratorio ?? '—'} · {r.tipoProduto}
+                            {r.substancia} · {r.laboratorio ?? '—'}
                           </p>
                         </button>
                       ))
@@ -768,6 +849,50 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
                 </div>
               )}
             </div>
+
+            {/* Competitors panel — same substance as first selected product */}
+            {firstProduct && competitorList.length > 0 && (
+              <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/50">
+                <button
+                  type="button"
+                  onClick={() => setShowCompetitors(!showCompetitors)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                >
+                  <Users className="h-3.5 w-3.5 text-purple-600" />
+                  <span className="text-xs font-medium text-purple-700 flex-1">
+                    Competitors ({firstProduct.substancia}) — {competitorList.length} products
+                  </span>
+                  {showCompetitors
+                    ? <ChevronUp className="h-3.5 w-3.5 text-purple-400" />
+                    : <ChevronDown className="h-3.5 w-3.5 text-purple-400" />}
+                </button>
+                {showCompetitors && (
+                  <div className="max-h-40 overflow-y-auto border-t border-purple-200 divide-y divide-purple-100">
+                    {competitorList.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => addAnvisaProduct(c)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-purple-100/50"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium">{c.produto}</span>
+                          <p className="text-[11px] text-text-tertiary truncate">{c.apresentacao}</p>
+                        </div>
+                        <span className="text-[11px] text-text-tertiary shrink-0">{c.laboratorio ?? '—'}</span>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
+                          c.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
+                          c.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
+                          'bg-blue-50 text-blue-700'
+                        }`}>
+                          {c.tipoProduto}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2">
