@@ -5,6 +5,15 @@ export function createMigrateRoutes() {
   const app = new Hono();
 
   app.post('/run', async (c) => {
+    // Simple auth: require MIGRATE_KEY env var (skip in dev)
+    const migrateKey = process.env.MIGRATE_KEY;
+    if (migrateKey) {
+      const provided = c.req.header('X-Migrate-Key');
+      if (provided !== migrateKey) {
+        return c.json({ error: 'Unauthorized' }, 401);
+      }
+    }
+
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) return c.json({ error: 'DATABASE_URL not set' }, 500);
 
