@@ -189,9 +189,19 @@ export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
       return c.json(result);
     } catch (e) {
       const msg = (e as Error).message;
-      // Session may already exist on gateway
+      // Session already exists on gateway — delete and restart to get fresh QR
       if (msg.includes('already exist')) {
-        return c.json({ message: 'Session already active on gateway' });
+        try {
+          await waClient.deleteSession(session.name);
+        } catch {
+          // ignore delete errors
+        }
+        const result = await waClient.startSession(session.name);
+        await db
+          .update(waSessions)
+          .set({ status: 'connecting', updatedAt: new Date() })
+          .where(eq(waSessions.id, id));
+        return c.json(result);
       }
       throw e;
     }

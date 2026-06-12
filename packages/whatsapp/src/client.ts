@@ -43,11 +43,12 @@ export class WhatsAppClient {
   }
 
   async startSession(session: string): Promise<{ qr?: string; message?: string }> {
-    const result = await this.request<{ data: { qr?: string; message?: string } }>(
+    // wa-gateway returns {qr: "..."} or {message: "..."} at top level (no data wrapper)
+    const result = await this.request<{ qr?: string; message?: string }>(
       '/session/start',
       { method: 'POST', body: JSON.stringify({ session }) },
     );
-    return result.data;
+    return result;
   }
 
   async deleteSession(session: string): Promise<void> {
