@@ -1,7 +1,11 @@
 import { Hono } from 'hono';
 import { eq, inArray } from 'drizzle-orm';
 import { Queue, type ConnectionOptions } from 'bullmq';
-import { campaigns, campaignPharmacies, campaignProducts, products, anvisaProducts, type Db } from '@pharma/db';
+import {
+  campaigns, campaignPharmacies, campaignProducts, products, anvisaProducts,
+  conversations, messages, conversationEvents, extractionResults, productFindings,
+  campaignReports, type Db,
+} from '@pharma/db';
 import { CampaignSettingsSchema } from '@pharma/shared';
 
 export function createCampaignRoutes(db: Db, redis: ConnectionOptions) {
@@ -119,6 +123,38 @@ export function createCampaignRoutes(db: Db, redis: ConnectionOptions) {
     const id = c.req.param('id');
     await db.update(campaigns).set({ status: 'paused', updatedAt: new Date() }).where(eq(campaigns.id, id));
     return c.json({ status: 'paused' });
+  });
+
+  app.delete('/:id', async (c) => {
+    const id = c.req.param('id');
+    const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, id));
+    if (!campaign) return c.json({ error: 'Not found' }, 404);
+    if (campaign.status === 'running') {
+      return c.json({ error: 'Cannot delete a running campaign. Pause it first.' }, 400);
+    }
+
+    // Delete in FK order: productFindings → extractionResults → messages → events → conversations → campaignPharmacies → campaignProducts → reports → campaign
+    const convos = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.campaignId, id));
+    const convoIds = convos.map((c) => c.id);
+
+    if (convoIds.length > 0) {
+      const extractions = await db.select({ id: extractionResults.id }).from(extractionResults).where(inArray(extractionResults.conversationId, convoIds));
+      const extractionIds = extractions.map((e) => e.id);
+      if (extractionIds.length > 0) {
+        await db.delete(productFindings).where(inArray(productFindings.extractionResultId, extractionIds));
+        await db.delete(extractionResults).where(inArray(extractionResults.id, extractionIds));
+      }
+      await db.delete(messages).where(inArray(messages.conversationId, convoIds));
+      await db.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convoIds));
+      await db.delete(conversations).where(inArray(conversations.id, convoIds));
+    }
+
+    await db.delete(campaignPharmacies).where(eq(campaignPharmacies.campaignId, id));
+    await db.delete(campaignProducts).where(eq(campaignProducts.campaignId, id));
+    await db.delete(campaignReports).where(eq(campaignReports.campaignId, id));
+    await db.delete(campaigns).where(eq(campaigns.id, id));
+
+    return c.json({ status: 'deleted' });
   });
 
   return app;

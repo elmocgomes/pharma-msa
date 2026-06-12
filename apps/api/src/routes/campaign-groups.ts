@@ -190,5 +190,16 @@ export function createCampaignGroupRoutes(db: Db) {
     }, 201);
   });
 
+  app.delete('/:id', async (c) => {
+    const id = c.req.param('id');
+    const [group] = await db.select().from(campaignGroups).where(eq(campaignGroups.id, id));
+    if (!group) return c.json({ error: 'Not found' }, 404);
+
+    await db.update(campaigns).set({ campaignGroupId: null }).where(eq(campaigns.campaignGroupId, id));
+    await db.delete(campaignGroups).where(eq(campaignGroups.id, id));
+
+    return c.json({ status: 'deleted' });
+  });
+
   return app;
 }

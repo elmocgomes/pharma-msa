@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty';
-import { Megaphone, Play, Pause, BarChart3, ChevronDown, ChevronUp, Plus, Globe, MapPin, Search, X, Users, Pill } from 'lucide-react';
+import { Megaphone, Play, Pause, BarChart3, ChevronDown, ChevronUp, Plus, Globe, MapPin, Search, X, Users, Pill, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 function CampaignReport({ campaignId }: { campaignId: string }) {
@@ -148,6 +148,19 @@ export function CampaignsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
   });
 
+  const deleteCampaign = useMutation({
+    mutationFn: (id: string) => api.campaigns.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+
+  const deleteGroup = useMutation({
+    mutationFn: (id: string) => api.campaignGroups.delete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaign-groups'] });
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+    },
+  });
+
   function toggleReport(id: string) {
     setExpandedCampaignId(prev => prev === id ? null : id);
   }
@@ -246,6 +259,21 @@ export function CampaignsPage() {
                           : <ChevronDown className="h-3 w-3" />}
                       </Button>
                     )}
+                    {campaign.status !== 'running' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        disabled={deleteCampaign.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Delete campaign "${campaign.name}"? This will remove all conversations, messages, and reports.`)) {
+                            deleteCampaign.mutate(campaign.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                   {expandedCampaignId === campaign.id && (
                     <CampaignReport campaignId={campaign.id} />
@@ -269,7 +297,7 @@ export function CampaignsPage() {
           ) : (
             <div className="space-y-3">
               {campaignGroups.data?.map((group) => (
-                <CampaignGroupCard key={group.id} group={group} />
+                <CampaignGroupCard key={group.id} group={group} onDelete={deleteGroup} />
               ))}
             </div>
           )}
@@ -639,7 +667,7 @@ const BRAZILIAN_STATES = [
   'PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO',
 ];
 
-function CampaignGroupCard({ group }: { group: import('@/lib/api').CampaignGroup }) {
+function CampaignGroupCard({ group, onDelete }: { group: import('@/lib/api').CampaignGroup; onDelete: { mutate: (id: string) => void; isPending: boolean } }) {
   const [expanded, setExpanded] = useState(false);
   const detail = useQuery({
     queryKey: ['campaign-group', group.id],
@@ -672,6 +700,20 @@ function CampaignGroupCard({ group }: { group: import('@/lib/api').CampaignGroup
         <span className="text-xs text-text-tertiary">
           {formatDistanceToNow(new Date(group.createdAt), { addSuffix: true })}
         </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+          disabled={onDelete.isPending}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (window.confirm(`Delete group "${group.name}"? Child campaigns will be unlinked but not deleted.`)) {
+              onDelete.mutate(group.id);
+            }
+          }}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
         {expanded ? <ChevronUp className="h-4 w-4 text-text-tertiary" /> : <ChevronDown className="h-4 w-4 text-text-tertiary" />}
       </button>
 

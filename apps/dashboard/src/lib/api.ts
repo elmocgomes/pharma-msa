@@ -47,6 +47,7 @@ export const api = {
       request<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
     start: (id: string) => request<{ status: string }>(`/campaigns/${id}/start`, { method: 'POST' }),
     pause: (id: string) => request<{ status: string }>(`/campaigns/${id}/pause`, { method: 'POST' }),
+    delete: (id: string) => request<{ status: string }>(`/campaigns/${id}`, { method: 'DELETE' }),
   },
   conversations: {
     list: (campaignId?: string) =>
@@ -122,6 +123,7 @@ export const api = {
     get: (id: string) => request<CampaignGroupDetail>(`/campaign-groups/${id}`),
     create: (data: { name: string; scriptId: string; productIds?: string[]; anvisaProductIds?: string[]; targetStates: string[] }) =>
       request<{ group: CampaignGroup; campaigns: Campaign[] }>('/campaign-groups', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ status: string }>(`/campaign-groups/${id}`, { method: 'DELETE' }),
   },
 };
 
