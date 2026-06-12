@@ -56,7 +56,12 @@ const waClient = new WhatsAppClient(
 
 const app = new Hono();
 
-app.use('*', cors());
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400,
+}));
 app.use('*', logger());
 app.onError(errorHandler);
 
