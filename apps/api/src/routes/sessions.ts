@@ -52,7 +52,7 @@ export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
   // ── Create a new session ──
   app.post('/', async (c) => {
     const body = await c.req.json();
-    const { name, personaName, personaCpf, personaDetails, dailyLimit } = body;
+    const { name, personaName, personaCpf, personaDetails, dailyLimit, state } = body;
 
     if (!name) {
       return c.json({ error: 'name is required' }, 400);
@@ -66,6 +66,7 @@ export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
         personaCpf,
         personaDetails,
         dailyLimit: dailyLimit ?? 200,
+        state: state ?? null,
       })
       .returning();
 
@@ -76,7 +77,7 @@ export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
   app.patch('/:id', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json();
-    const { name, personaName, personaCpf, personaDetails, dailyLimit, phoneNumber } = body;
+    const { name, personaName, personaCpf, personaDetails, dailyLimit, phoneNumber, state } = body;
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
@@ -85,6 +86,7 @@ export function createSessionRoutes(db: Db, waClient: WhatsAppClient) {
     if (personaCpf !== undefined) updates.personaCpf = personaCpf;
     if (personaDetails !== undefined) updates.personaDetails = personaDetails;
     if (dailyLimit !== undefined) updates.dailyLimit = dailyLimit;
+    if (state !== undefined) updates.state = state;
 
     const [updated] = await db
       .update(waSessions)

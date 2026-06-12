@@ -5,6 +5,8 @@ export { pharmacies } from './schema/pharmacies.js';
 export { products } from './schema/products.js';
 export { scripts } from './schema/scripts.js';
 export { campaigns, campaignPharmacies, campaignProducts } from './schema/campaigns.js';
+export { campaignGroups } from './schema/campaign-groups.js';
+export { anvisaProducts, type PmcByIcms } from './schema/anvisa.js';
 export { conversations } from './schema/conversations.js';
 export { messages } from './schema/messages.js';
 export { extractionResults, productFindings } from './schema/extractions.js';

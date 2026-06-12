@@ -95,6 +95,32 @@ export const api = {
     generate: (campaignId: string) =>
       request<{ status: string }>(`/reports/campaigns/${campaignId}/analyze`, { method: 'POST' }),
   },
+  anvisa: {
+    search: (params: { q?: string; tipo?: string; substancia?: string; state?: string; page?: number; limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
+      if (params.tipo) qs.set('tipo', params.tipo);
+      if (params.substancia) qs.set('substancia', params.substancia);
+      if (params.state) qs.set('state', params.state);
+      if (params.page) qs.set('page', String(params.page));
+      if (params.limit) qs.set('limit', String(params.limit));
+      return request<AnvisaSearchResult>(`/anvisa/products?${qs.toString()}`);
+    },
+    get: (id: string, state?: string) =>
+      request<AnvisaProductDetail>(`/anvisa/products/${id}${state ? `?state=${state}` : ''}`),
+    bySubstance: (substance: string, state?: string) =>
+      request<{ substance: string; count: number; products: AnvisaProduct[] }>(
+        `/anvisa/products/by-substance/${encodeURIComponent(substance)}${state ? `?state=${state}` : ''}`,
+      ),
+    stats: () => request<{ total: number; byType: { tipoProduto: string; count: number }[] }>('/anvisa/stats'),
+    icmsRates: () => request<{ stateRates: Record<string, string>; availableRates: string[] }>('/anvisa/icms-rates'),
+  },
+  campaignGroups: {
+    list: () => request<CampaignGroup[]>('/campaign-groups'),
+    get: (id: string) => request<CampaignGroupDetail>(`/campaign-groups/${id}`),
+    create: (data: { name: string; scriptId: string; productIds: string[]; targetStates: string[] }) =>
+      request<{ group: CampaignGroup; campaigns: Campaign[] }>('/campaign-groups', { method: 'POST', body: JSON.stringify(data) }),
+  },
 };
 
 // Types
@@ -109,6 +135,7 @@ export interface Session {
   personaName: string | null;
   personaCpf: string | null;
   personaDetails: Record<string, unknown> | null;
+  state: string | null;
   createdAt: string;
   updatedAt: string;
   gateway?: { status: string; synced: boolean };
@@ -302,4 +329,48 @@ export interface CampaignReportData {
     generated_at: string;
   };
   createdAt: string;
+}
+
+export interface AnvisaProduct {
+  id: string;
+  substancia: string;
+  produto: string;
+  apresentacao: string;
+  laboratorio: string | null;
+  tipoProduto: string;
+  ean: string | null;
+  codigoGgrem: string | null;
+  registro: string | null;
+  classeTerapeutica: string | null;
+  tarja: string | null;
+  regimePreco: string | null;
+  pmcByIcms: Record<string, string>;
+  pmc?: number | null;
+  icmsRate?: string;
+  importedAt: string;
+}
+
+export interface AnvisaProductDetail extends AnvisaProduct {
+  pmcAllStates: Record<string, number | null>;
+}
+
+export interface AnvisaSearchResult {
+  data: AnvisaProduct[];
+  pagination: { page: number; limit: number; total: number; pages: number };
+}
+
+export interface CampaignGroup {
+  id: string;
+  name: string;
+  scriptId: string;
+  productIds: string[];
+  targetStates: string[];
+  settings: Record<string, unknown>;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CampaignGroupDetail extends CampaignGroup {
+  campaigns: Campaign[];
 }

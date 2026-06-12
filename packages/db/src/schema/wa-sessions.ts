@@ -12,6 +12,7 @@ export const waSessions = pgTable('wa_sessions', {
   personaName: text('persona_name'),
   personaCpf: text('persona_cpf'),
   personaDetails: jsonb('persona_details').$type<PersonaDetails>(),
+  state: text('state'), // Brazilian state (UF) this session operates in (e.g. 'SP', 'RJ')
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

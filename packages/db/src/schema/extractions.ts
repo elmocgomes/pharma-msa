@@ -32,5 +32,7 @@ export const productFindings = pgTable('product_findings', {
   dosageMentioned: text('dosage_mentioned'),
   quantityMentioned: integer('quantity_mentioned'),
   formMentioned: text('form_mentioned'),
+  pmcValue: numeric('pmc_value', { precision: 10, scale: 2 }),
+  pmcExceeded: boolean('pmc_exceeded'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

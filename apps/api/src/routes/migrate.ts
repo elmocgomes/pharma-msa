@@ -100,6 +100,82 @@ export function createMigrateRoutes() {
       results.push({ migration: '0010_campaign_reports', status: 'error', error: String(err) });
     }
 
+    // Migration 0011: Anvisa products, campaign groups, state-based campaigns
+    try {
+      await sql.unsafe(`
+        -- Enable trigram extension for fuzzy search
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+        -- Anvisa CMED product table (25K+ rows)
+        CREATE TABLE IF NOT EXISTS anvisa_products (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          substancia text NOT NULL,
+          produto text NOT NULL,
+          apresentacao text NOT NULL,
+          laboratorio text,
+          tipo_produto text NOT NULL,
+          ean text,
+          codigo_ggrem text,
+          registro text,
+          classe_terapeutica text,
+          tarja text,
+          regime_preco text,
+          pmc_by_icms jsonb NOT NULL,
+          pf_by_icms jsonb,
+          restricao_hospitalar text,
+          cap text,
+          confaz_87 text,
+          icms_0 text,
+          comercializacao text,
+          destinacao_comercial text,
+          imported_at timestamptz NOT NULL DEFAULT now(),
+          data_publicacao date
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_anvisa_substancia ON anvisa_products USING gin (substancia gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS idx_anvisa_produto ON anvisa_products USING gin (produto gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS idx_anvisa_ean ON anvisa_products(ean) WHERE ean IS NOT NULL AND ean != '    -     ';
+        CREATE INDEX IF NOT EXISTS idx_anvisa_codigo_ggrem ON anvisa_products(codigo_ggrem) WHERE codigo_ggrem IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_anvisa_tipo ON anvisa_products(tipo_produto);
+
+        -- Campaign groups (state-based multi-campaign parent)
+        CREATE TABLE IF NOT EXISTS campaign_groups (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          name text NOT NULL,
+          script_id uuid NOT NULL REFERENCES scripts(id),
+          product_ids jsonb NOT NULL,
+          target_states jsonb NOT NULL,
+          settings jsonb NOT NULL,
+          status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'running', 'paused', 'completed')),
+          created_at timestamptz NOT NULL DEFAULT now(),
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+
+        -- Add state to wa_sessions
+        ALTER TABLE wa_sessions ADD COLUMN IF NOT EXISTS state text;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_sessions_state ON wa_sessions(state) WHERE state IS NOT NULL;
+
+        -- Add anvisa link to products
+        DO $$ BEGIN
+          ALTER TABLE products ADD COLUMN anvisa_product_id uuid REFERENCES anvisa_products(id) ON DELETE SET NULL;
+        EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+        CREATE INDEX IF NOT EXISTS idx_products_anvisa ON products(anvisa_product_id) WHERE anvisa_product_id IS NOT NULL;
+
+        -- Add campaign group + state to campaigns
+        DO $$ BEGIN
+          ALTER TABLE campaigns ADD COLUMN campaign_group_id uuid REFERENCES campaign_groups(id) ON DELETE SET NULL;
+        EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_state text;
+
+        -- Add PMC validation to product_findings
+        ALTER TABLE product_findings ADD COLUMN IF NOT EXISTS pmc_value numeric(10,2);
+        ALTER TABLE product_findings ADD COLUMN IF NOT EXISTS pmc_exceeded boolean;
+      `);
+      results.push({ migration: '0011_anvisa_state_campaigns', status: 'ok' });
+    } catch (err) {
+      results.push({ migration: '0011_anvisa_state_campaigns', status: 'error', error: String(err) });
+    }
+
     await sql.end();
     return c.json({ results });
   });

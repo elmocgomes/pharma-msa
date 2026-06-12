@@ -23,6 +23,8 @@ import { createPromptRoutes } from './routes/prompts.js';
 import { createPromptChatRoutes } from './routes/prompt-chat.js';
 import { createReportRoutes } from './routes/reports.js';
 import { createMigrateRoutes } from './routes/migrate.js';
+import { createAnvisaRoutes } from './routes/anvisa.js';
+import { createCampaignGroupRoutes } from './routes/campaign-groups.js';
 import { errorHandler } from './middleware/error-handler.js';
 
 // Resolve hostnames to IPs at startup to bypass Docker DNS for long-lived connections
@@ -81,6 +83,8 @@ app.route('/results', createResultRoutes(db));
 app.route('/prompts', createPromptRoutes(db));
 app.route('/reports', createReportRoutes(db, redisConnection));
 app.route('/migrate', createMigrateRoutes());
+app.route('/anvisa', createAnvisaRoutes(db));
+app.route('/campaign-groups', createCampaignGroupRoutes(db));
 
 // Prompt chat requires ANTHROPIC_API_KEY
 if (process.env.ANTHROPIC_API_KEY) {

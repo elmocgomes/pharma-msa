@@ -7,7 +7,7 @@ import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty';
 import {
   Smartphone, Plus, RefreshCw, Trash2, Plug, Unplug, Phone,
-  User, ChevronRight, RotateCcw, Wifi, WifiOff, Pencil, Save, X,
+  User, ChevronRight, RotateCcw, Wifi, WifiOff, Pencil, Save, X, MapPin,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -127,6 +127,9 @@ function SessionCard({ session, expanded, onToggle }: {
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold truncate">{session.personaName ?? session.name}</span>
             <StatusBadge status={session.status} />
+            {session.state && (
+              <span className="text-[10px] font-semibold bg-brand-dim text-brand px-1.5 py-0.5 rounded">{session.state}</span>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-0.5">
             {session.phoneNumber && (
@@ -256,6 +259,7 @@ function PersonaSection({ session }: { session: Session }) {
   const [age, setAge] = useState(String(details.age ?? ''));
   const [neighborhood, setNeighborhood] = useState(String(details.neighborhood ?? ''));
   const [backstory, setBackstory] = useState(String(details.backstory ?? ''));
+  const [sessionState, setSessionState] = useState(session.state ?? '');
 
   const update = useMutation({
     mutationFn: (data: Partial<Session>) => api.sessions.update(session.id, data),
@@ -275,8 +279,11 @@ function PersonaSection({ session }: { session: Session }) {
       personaName: personaName || null,
       personaCpf: personaCpf || null,
       personaDetails: Object.keys(newDetails).length > 0 ? newDetails : null,
+      state: sessionState || null,
     } as Partial<Session>);
   }
+
+  const STATES = ['','AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
   if (!editing) {
     return (
@@ -291,16 +298,15 @@ function PersonaSection({ session }: { session: Session }) {
             Edit
           </Button>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <InfoBlock label="Name" value={session.personaName ?? '-'} />
           <InfoBlock label="CPF" value={session.personaCpf ?? '-'} />
+          <InfoBlock label="State (UF)" value={session.state ?? '-'} />
           <InfoBlock label="Age" value={details.age ? String(details.age) : '-'} />
           <InfoBlock label="Neighborhood" value={details.neighborhood ? String(details.neighborhood) : '-'} />
-          {typeof details.backstory === 'string' && details.backstory && (
-            <div className="col-span-2">
-              <InfoBlock label="Backstory" value={details.backstory} />
-            </div>
-          )}
+          {typeof details.backstory === 'string' && details.backstory ? (
+            <InfoBlock label="Backstory" value={details.backstory} />
+          ) : <div />}
         </div>
       </div>
     );
@@ -324,7 +330,7 @@ function PersonaSection({ session }: { session: Session }) {
           </Button>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">Name</label>
           <input
@@ -342,6 +348,18 @@ function PersonaSection({ session }: { session: Session }) {
             placeholder="e.g. 123.456.789-00"
             className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
           />
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">State (UF)</label>
+          <select
+            value={sessionState}
+            onChange={(e) => setSessionState(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand bg-surface"
+          >
+            {STATES.map((s) => (
+              <option key={s} value={s}>{s || '— None —'}</option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">Age</label>
@@ -362,7 +380,7 @@ function PersonaSection({ session }: { session: Session }) {
             className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
           />
         </div>
-        <div className="col-span-2">
+        <div className="col-span-3">
           <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">Backstory</label>
           <input
             value={backstory}

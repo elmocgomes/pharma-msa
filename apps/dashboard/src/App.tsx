@@ -9,6 +9,7 @@ import { ConversationDetailPage } from '@/pages/ConversationDetailPage';
 import { PharmaciesPage } from '@/pages/PharmaciesPage';
 import { ProductsPage } from '@/pages/ProductsPage';
 import { PromptsPage } from '@/pages/PromptsPage';
+import { AnvisaPage } from '@/pages/AnvisaPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/pharmacies" element={<PharmaciesPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/prompts" element={<PromptsPage />} />
+            <Route path="/anvisa" element={<AnvisaPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
