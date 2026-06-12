@@ -9,6 +9,7 @@ import * as conversationsSchema from './schema/conversations.js';
 import * as messagesSchema from './schema/messages.js';
 import * as extractionsSchema from './schema/extractions.js';
 import * as eventsSchema from './schema/events.js';
+import * as promptsSchema from './schema/prompts.js';
 
 const schema = {
   ...waSessions,
@@ -20,6 +21,7 @@ const schema = {
   ...messagesSchema,
   ...extractionsSchema,
   ...eventsSchema,
+  ...promptsSchema,
 };
 
 export function createDb(connectionString: string) {

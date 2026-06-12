@@ -152,9 +152,15 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
+      '@pharma/db':
+        specifier: workspace:*
+        version: link:../db
       '@pharma/shared':
         specifier: workspace:*
         version: link:../shared
+      drizzle-orm:
+        specifier: ^0.44.0
+        version: 0.44.7(postgres@3.4.9)
       openai:
         specifier: ^4.80.0
         version: 4.104.0(zod@3.25.76)
