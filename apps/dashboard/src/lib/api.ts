@@ -17,7 +17,7 @@ export const api = {
   sessions: {
     list: () => request<Session[]>('/sessions'),
     get: (id: string) => request<SessionDetail>(`/sessions/${id}`),
-    create: (data: { name: string; personaName?: string; personaCpf?: string }) =>
+    create: (data: { name: string; personaName?: string; personaCpf?: string; personaDetails?: Record<string, unknown> }) =>
       request<Session>('/sessions', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Session>) =>
       request<Session>(`/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

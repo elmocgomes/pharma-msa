@@ -7,7 +7,7 @@ import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty';
 import {
   Smartphone, Plus, RefreshCw, Trash2, Plug, Unplug, Phone,
-  User, ChevronRight, RotateCcw, Wifi, WifiOff,
+  User, ChevronRight, RotateCcw, Wifi, WifiOff, Pencil, Save, X,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -191,12 +191,13 @@ function SessionCard({ session, expanded, onToggle }: {
             </div>
           )}
 
+          {/* Persona section */}
+          <PersonaSection session={session} />
+
           {/* Info grid */}
-          <div className="grid grid-cols-2 gap-4 px-6 py-4">
+          <div className="grid grid-cols-2 gap-4 px-6 py-4 border-t border-border-dim">
             <InfoBlock label="Session ID" value={session.name} mono />
             <InfoBlock label="DB ID" value={session.id} mono />
-            <InfoBlock label="Persona" value={session.personaName ?? '-'} />
-            <InfoBlock label="CPF" value={session.personaCpf ?? '-'} />
             {detail.data?.gateway && (
               <>
                 <InfoBlock label="Gateway Status" value={detail.data.gateway.status} />
@@ -246,6 +247,138 @@ function SessionCard({ session, expanded, onToggle }: {
   );
 }
 
+function PersonaSection({ session }: { session: Session }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [personaName, setPersonaName] = useState(session.personaName ?? '');
+  const [personaCpf, setPersonaCpf] = useState(session.personaCpf ?? '');
+  const details = (session.personaDetails ?? {}) as Record<string, unknown>;
+  const [age, setAge] = useState(String(details.age ?? ''));
+  const [neighborhood, setNeighborhood] = useState(String(details.neighborhood ?? ''));
+  const [backstory, setBackstory] = useState(String(details.backstory ?? ''));
+
+  const update = useMutation({
+    mutationFn: (data: Partial<Session>) => api.sessions.update(session.id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sessions'] });
+      qc.invalidateQueries({ queryKey: ['session', session.id] });
+      setEditing(false);
+    },
+  });
+
+  function handleSave() {
+    const newDetails: Record<string, unknown> = {};
+    if (age) newDetails.age = parseInt(age, 10);
+    if (neighborhood) newDetails.neighborhood = neighborhood;
+    if (backstory) newDetails.backstory = backstory;
+    update.mutate({
+      personaName: personaName || null,
+      personaCpf: personaCpf || null,
+      personaDetails: Object.keys(newDetails).length > 0 ? newDetails : null,
+    } as Partial<Session>);
+  }
+
+  if (!editing) {
+    return (
+      <div className="px-6 py-4">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+            <User className="h-3.5 w-3.5" />
+            Persona Identity
+          </h4>
+          <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+            <Pencil className="h-3 w-3" />
+            Edit
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <InfoBlock label="Name" value={session.personaName ?? '-'} />
+          <InfoBlock label="CPF" value={session.personaCpf ?? '-'} />
+          <InfoBlock label="Age" value={details.age ? String(details.age) : '-'} />
+          <InfoBlock label="Neighborhood" value={details.neighborhood ? String(details.neighborhood) : '-'} />
+          {details.backstory && (
+            <div className="col-span-2">
+              <InfoBlock label="Backstory" value={String(details.backstory)} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-6 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+          <User className="h-3.5 w-3.5" />
+          Edit Persona
+        </h4>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+            <X className="h-3 w-3" />
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={update.isPending}>
+            <Save className="h-3 w-3" />
+            {update.isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">Name</label>
+          <input
+            value={personaName}
+            onChange={(e) => setPersonaName(e.target.value)}
+            placeholder="e.g. Maria Silva"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+          />
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">CPF</label>
+          <input
+            value={personaCpf}
+            onChange={(e) => setPersonaCpf(e.target.value)}
+            placeholder="e.g. 123.456.789-00"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+          />
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">Age</label>
+          <input
+            type="number"
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+            placeholder="e.g. 35"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+          />
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">Neighborhood</label>
+          <input
+            value={neighborhood}
+            onChange={(e) => setNeighborhood(e.target.value)}
+            placeholder="e.g. Vila Mariana, SP"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">Backstory</label>
+          <input
+            value={backstory}
+            onChange={(e) => setBackstory(e.target.value)}
+            placeholder="e.g. Compra remedio pra mae idosa que mora junto"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+          />
+        </div>
+      </div>
+      {update.isError && (
+        <p className="mt-2 text-sm text-red-500">{(update.error as Error).message}</p>
+      )}
+    </div>
+  );
+}
+
 function InfoBlock({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
@@ -259,9 +392,14 @@ function CreateSessionForm({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [personaName, setPersonaName] = useState('');
+  const [personaCpf, setPersonaCpf] = useState('');
+  const [personaAge, setPersonaAge] = useState('');
+  const [personaNeighborhood, setPersonaNeighborhood] = useState('');
+  const [personaBackstory, setPersonaBackstory] = useState('');
 
   const create = useMutation({
-    mutationFn: (data: { name: string; personaName?: string }) => api.sessions.create(data),
+    mutationFn: (data: { name: string; personaName?: string; personaCpf?: string; personaDetails?: Record<string, unknown> }) =>
+      api.sessions.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions'] });
       onClose();
@@ -279,32 +417,91 @@ function CreateSessionForm({ onClose }: { onClose: () => void }) {
           onSubmit={(e) => {
             e.preventDefault();
             const fallbackName = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            create.mutate({ name: name || fallbackName, personaName: personaName || undefined });
+            const details: Record<string, unknown> = {};
+            if (personaAge) details.age = parseInt(personaAge, 10);
+            if (personaNeighborhood) details.neighborhood = personaNeighborhood;
+            if (personaBackstory) details.backstory = personaBackstory;
+            create.mutate({
+              name: name || fallbackName,
+              personaName: personaName || undefined,
+              personaCpf: personaCpf || undefined,
+              personaDetails: Object.keys(details).length > 0 ? details : undefined,
+            });
           }}
-          className="flex gap-3 items-end"
+          className="space-y-4"
         >
-          <div className="flex-1">
-            <label className="text-xs font-medium text-text-secondary">Session Name</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="auto-generated if empty"
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
-            />
+          {/* Row 1: Session + Identity */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-medium text-text-secondary">Session Name</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="auto-generated if empty"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-secondary">Persona Name</label>
+              <input
+                value={personaName}
+                onChange={(e) => setPersonaName(e.target.value)}
+                placeholder="e.g. Maria Silva"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-secondary">Persona CPF</label>
+              <input
+                value={personaCpf}
+                onChange={(e) => setPersonaCpf(e.target.value)}
+                placeholder="e.g. 123.456.789-00"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+              />
+            </div>
           </div>
-          <div className="flex-1">
-            <label className="text-xs font-medium text-text-secondary">Persona Name</label>
-            <input
-              value={personaName}
-              onChange={(e) => setPersonaName(e.target.value)}
-              placeholder="e.g. Maria Silva"
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
-            />
+
+          {/* Row 2: Persona Details */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-medium text-text-secondary">Age</label>
+              <input
+                type="number"
+                value={personaAge}
+                onChange={(e) => setPersonaAge(e.target.value)}
+                placeholder="e.g. 35"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-secondary">Neighborhood</label>
+              <input
+                value={personaNeighborhood}
+                onChange={(e) => setPersonaNeighborhood(e.target.value)}
+                placeholder="e.g. Vila Mariana, SP"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-secondary">Backstory</label>
+              <input
+                value={personaBackstory}
+                onChange={(e) => setPersonaBackstory(e.target.value)}
+                placeholder="e.g. Compra remedio pra mae idosa"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-brand focus:border-brand"
+              />
+            </div>
           </div>
-          <Button type="submit" disabled={create.isPending}>
-            <User className="h-3.5 w-3.5" />
-            {create.isPending ? 'Creating...' : 'Create'}
-          </Button>
+
+          <div className="flex justify-end">
+            <Button type="submit" disabled={create.isPending}>
+              <User className="h-3.5 w-3.5" />
+              {create.isPending ? 'Creating...' : 'Create Session'}
+            </Button>
+          </div>
+          {create.isError && (
+            <p className="text-sm text-red-500">{(create.error as Error).message}</p>
+          )}
         </form>
       </CardContent>
     </Card>
