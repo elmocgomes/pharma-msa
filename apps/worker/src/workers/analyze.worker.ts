@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import {
   type Db, conversations, extractionResults, campaigns,
   pharmacies, products, campaignProducts, campaignReports,
+  productFindings,
 } from '@pharma/db';
 import { EnrichedExtractorResultSchema } from '@pharma/shared';
 import { CampaignAnalystAgent, type LlmProvider } from '@pharma/ai';
@@ -51,6 +52,7 @@ export function createAnalyzeWorker(
         .where(eq(conversations.campaignId, campaignId));
 
       const extractions: { pharmacyName: string; result: any }[] = [];
+      const pmcViolations: { pharmacyName: string; productName: string; price: number; pmcValue: number }[] = [];
 
       for (const conv of completedConversations) {
         const [extraction] = await db
@@ -68,15 +70,44 @@ export function createAnalyzeWorker(
           .from(pharmacies)
           .where(eq(pharmacies.id, conv.pharmacyId));
 
+        const pharmacyName = pharmacy?.name ?? 'Unknown';
+
         extractions.push({
-          pharmacyName: pharmacy?.name ?? 'Unknown',
+          pharmacyName,
           result: parsed.data,
         });
+
+        // Collect PMC violations from product_findings
+        const findings = await db
+          .select()
+          .from(productFindings)
+          .where(eq(productFindings.extractionResultId, extraction.id));
+
+        for (const f of findings) {
+          if (f.pmcExceeded && f.price && f.pmcValue) {
+            pmcViolations.push({
+              pharmacyName,
+              productName: f.productNameMentioned,
+              price: parseFloat(f.price),
+              pmcValue: parseFloat(f.pmcValue),
+            });
+          }
+        }
       }
 
       if (extractions.length === 0) {
         console.warn(`[ANALYZE] No extractions found for campaign ${campaignId}`);
         return;
+      }
+
+      // Build PMC compliance context for the analyst
+      let pmcContext = '';
+      if (pmcViolations.length > 0) {
+        pmcContext = '\n\n## PMC Compliance Issues\n' +
+          `${pmcViolations.length} product price(s) exceeded the legal maximum (PMC/CMED):\n` +
+          pmcViolations.map((v) =>
+            `- ${v.pharmacyName}: "${v.productName}" at R$${v.price.toFixed(2)} (PMC limit: R$${v.pmcValue.toFixed(2)}, excess: +${((v.price / v.pmcValue - 1) * 100).toFixed(1)}%)`
+          ).join('\n');
       }
 
       try {
@@ -89,6 +120,7 @@ export function createAnalyzeWorker(
             brand: referenceProduct.brand ?? undefined,
           },
           extractions,
+          additionalContext: pmcContext || undefined,
         });
 
         await db.insert(campaignReports).values({

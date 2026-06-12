@@ -4,7 +4,7 @@ import { api } from '@/lib/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, Badge } from '@/components/ui/badge';
-import { ArrowLeft, Bot, User, Package, Check, X, DollarSign } from 'lucide-react';
+import { ArrowLeft, Bot, User, Package, Check, X, DollarSign, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 
 export function ConversationDetailPage() {
@@ -106,27 +106,49 @@ export function ConversationDetailPage() {
                 </Badge>
               </CardHeader>
               <CardContent className="space-y-4">
-                {extraction.data.rawAnalysis.products.map((p, i) => (
-                  <div key={i} className="rounded-lg border border-border-dim p-3 space-y-2">
-                    <p className="text-sm font-semibold">{p.product_name}</p>
+                {extraction.data.findings.map((f) => (
+                  <div key={f.id} className={`rounded-lg border p-3 space-y-2 ${
+                    f.pmcExceeded ? 'border-amber-300 bg-amber-50/50' : 'border-border-dim'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">{f.productNameMentioned}</p>
+                      {f.pmcExceeded && (
+                        <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                          <AlertTriangle className="h-3 w-3" />
+                          PMC
+                        </span>
+                      )}
+                    </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="flex items-center gap-1.5">
-                        {p.is_available ? <Check className="h-3.5 w-3.5 text-success" /> : <X className="h-3.5 w-3.5 text-danger" />}
-                        <span>{p.is_available ? 'Available' : 'Unavailable'}</span>
+                        {f.isAvailable ? <Check className="h-3.5 w-3.5 text-success" /> : <X className="h-3.5 w-3.5 text-danger" />}
+                        <span>{f.isAvailable ? 'Available' : f.isAvailable === false ? 'Unavailable' : 'Unknown'}</span>
                       </div>
-                      {p.price != null && (
+                      {f.price != null && (
                         <div className="flex items-center gap-1.5">
                           <DollarSign className="h-3.5 w-3.5 text-text-tertiary" />
-                          <span className="font-semibold">R$ {p.price.toFixed(2)}</span>
+                          <span className={`font-semibold ${f.pmcExceeded ? 'text-amber-700' : ''}`}>
+                            R$ {Number(f.price).toFixed(2)}
+                          </span>
                         </div>
                       )}
-                      {p.has_generic && (
+                      {f.pmcValue != null && (
+                        <div className="col-span-2 text-text-tertiary">
+                          PMC limit: R$ {Number(f.pmcValue).toFixed(2)}
+                          {f.pmcExceeded && f.price != null && (
+                            <span className="text-amber-600 ml-1 font-medium">
+                              (+{((Number(f.price) / Number(f.pmcValue) - 1) * 100).toFixed(1)}% acima)
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {f.hasGeneric && f.genericNames && (
                         <div className="col-span-2">
                           <span className="text-text-secondary">Generic: </span>
-                          {p.generic_names.map((g, j) => (
+                          {(f.genericNames ?? []).map((g, j) => (
                             <span key={j}>
-                              {g}{p.generic_prices[j] != null ? ` (R$${p.generic_prices[j]})` : ''}
-                              {j < p.generic_names.length - 1 ? ', ' : ''}
+                              {g}{f.genericPrices?.[j] != null ? ` (R$${f.genericPrices[j]})` : ''}
+                              {j < (f.genericNames?.length ?? 0) - 1 ? ', ' : ''}
                             </span>
                           ))}
                         </div>

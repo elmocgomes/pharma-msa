@@ -7,7 +7,7 @@ import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty';
 import {
   Smartphone, Plus, RefreshCw, Trash2, Plug, Unplug, Phone,
-  User, ChevronRight, RotateCcw, Wifi, WifiOff, Pencil, Save, X, MapPin,
+  User, ChevronRight, RotateCcw, Wifi, WifiOff, Pencil, Save, X,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 

@@ -10,7 +10,7 @@ const BRAZILIAN_STATES = [
   'PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO',
 ];
 
-const TIPO_OPTIONS = ['Novo', 'Similar', 'Genérico', 'Biológico', 'Específico', 'Fitoterápico'];
+// Type options are loaded dynamically from stats
 
 export function AnvisaPage() {
   const [q, setQ] = useState('');

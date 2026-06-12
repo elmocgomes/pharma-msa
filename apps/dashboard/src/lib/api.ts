@@ -247,6 +247,8 @@ export interface ProductFindingRow {
   genericPrices: number[] | null;
   alternativeNames: string[] | null;
   notes: string | null;
+  pmcValue: number | null;
+  pmcExceeded: boolean | null;
 }
 
 export interface Script {

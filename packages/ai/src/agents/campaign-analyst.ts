@@ -77,6 +77,7 @@ export class CampaignAnalystAgent {
       pharmacyName: string;
       result: EnrichedExtractorResult;
     }[];
+    additionalContext?: string;
   }): Promise<CampaignReport> {
     const dataSummary = opts.extractions.map((e, i) => {
       const findings = e.result.findings.map((f) =>
@@ -102,7 +103,7 @@ TOTAL DE FARMÁCIAS: ${opts.extractions.length}
 DADOS DAS CONVERSAS:
 ${dataSummary}
 
-Analise os dados e produza o relatório de mercado.`,
+Analise os dados e produza o relatório de mercado.${opts.additionalContext ? `\n\nCONTEXTO ADICIONAL:\n${opts.additionalContext}` : ''}`,
     }];
 
     const response = await this.provider.chat({
