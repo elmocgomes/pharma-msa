@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty';
-import { Megaphone, Play, Pause, BarChart3, ChevronDown, ChevronUp, Plus, Globe, MapPin, Search, X, Users } from 'lucide-react';
+import { Megaphone, Play, Pause, BarChart3, ChevronDown, ChevronUp, Plus, Globe, MapPin, Search, X, Users, Pill } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 function CampaignReport({ campaignId }: { campaignId: string }) {
@@ -279,13 +279,46 @@ export function CampaignsPage() {
   );
 }
 
+function sortCompetitors(list: AnvisaProduct[], mainApresentacao: string): AnvisaProduct[] {
+  return [...list].sort((a, b) => {
+    const aMatch = a.apresentacao === mainApresentacao ? 0 : 1;
+    const bMatch = b.apresentacao === mainApresentacao ? 0 : 1;
+    if (aMatch !== bMatch) return aMatch - bMatch;
+    return a.produto.localeCompare(b.produto);
+  });
+}
+
+function CompetitorRow({ product, onAdd }: { product: AnvisaProduct; onAdd: (p: AnvisaProduct) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onAdd(product)}
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-purple-100/50"
+    >
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-medium">{product.produto}</span>
+        <p className="text-[11px] text-text-tertiary truncate">{product.apresentacao}</p>
+      </div>
+      <span className="text-[11px] text-text-tertiary shrink-0">{product.laboratorio ?? '—'}</span>
+      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
+        product.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
+        product.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
+        'bg-blue-50 text-blue-700'
+      }`}>
+        {product.tipoProduto}
+      </span>
+    </button>
+  );
+}
+
 function CreateCampaignForm({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [scriptId, setScriptId] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [selectedPharmacies, setSelectedPharmacies] = useState<string[]>([]);
-  const [selectedAnvisaProducts, setSelectedAnvisaProducts] = useState<AnvisaProduct[]>([]);
+  const [mainProduct, setMainProduct] = useState<AnvisaProduct | null>(null);
+  const [selectedCompetitors, setSelectedCompetitors] = useState<AnvisaProduct[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [showCompetitors, setShowCompetitors] = useState(true);
@@ -299,11 +332,10 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
     enabled: productSearchQuery.length > 0,
   });
 
-  const firstProduct = selectedAnvisaProducts[0];
   const competitors = useQuery({
-    queryKey: ['anvisa-competitors', firstProduct?.substancia],
-    queryFn: () => api.anvisa.bySubstance(firstProduct!.substancia),
-    enabled: !!firstProduct?.substancia,
+    queryKey: ['anvisa-competitors', mainProduct?.substancia],
+    queryFn: () => api.anvisa.bySubstance(mainProduct!.substancia),
+    enabled: !!mainProduct?.substancia,
   });
 
   const create = useMutation({
@@ -319,21 +351,41 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
     setSelectedPharmacies((prev) => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
 
-  function addProduct(p: AnvisaProduct) {
-    if (!selectedAnvisaProducts.find((s) => s.id === p.id)) {
-      setSelectedAnvisaProducts((prev) => [...prev, p]);
+  function selectMainProduct(p: AnvisaProduct) {
+    setMainProduct(p);
+    setSelectedCompetitors([]);
+    setProductSearch('');
+    setProductSearchQuery('');
+  }
+
+  function addCompetitor(p: AnvisaProduct) {
+    if (!selectedCompetitors.find((s) => s.id === p.id)) {
+      setSelectedCompetitors((prev) => [...prev, p]);
     }
   }
 
-  function removeProduct(id: string) {
-    setSelectedAnvisaProducts((prev) => prev.filter((p) => p.id !== id));
+  function removeCompetitor(id: string) {
+    setSelectedCompetitors((prev) => prev.filter((p) => p.id !== id));
   }
 
-  const canSubmit = name && scriptId && sessionId && selectedPharmacies.length > 0 && selectedAnvisaProducts.length > 0;
+  function clearMainProduct() {
+    setMainProduct(null);
+    setSelectedCompetitors([]);
+  }
 
-  const competitorList = (competitors.data?.products ?? []).filter(
-    (c) => !selectedAnvisaProducts.some((s) => s.id === c.id),
+  const canSubmit = name && scriptId && sessionId && selectedPharmacies.length > 0 && mainProduct;
+
+  const allIds = selectedCompetitors.map((c) => c.id);
+  if (mainProduct) allIds.unshift(mainProduct.id);
+
+  const competitorList = sortCompetitors(
+    (competitors.data?.products ?? []).filter(
+      (c) => c.id !== mainProduct?.id && !selectedCompetitors.some((s) => s.id === c.id),
+    ),
+    mainProduct?.apresentacao ?? '',
   );
+
+  const exactMatchCount = competitorList.filter((c) => c.apresentacao === mainProduct?.apresentacao).length;
 
   return (
     <Card>
@@ -351,7 +403,7 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
               scriptId,
               waSessionId: sessionId,
               pharmacyIds: selectedPharmacies,
-              anvisaProductIds: selectedAnvisaProducts.map((p) => p.id),
+              anvisaProductIds: allIds,
             });
           }}
           className="space-y-4"
@@ -423,126 +475,149 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Products selection — search Anvisa catalog */}
+          {/* Main product — the product being surveyed */}
           <div>
-            <label className="text-xs font-medium text-text-secondary">
-              Products * ({selectedAnvisaProducts.length} selected)
-            </label>
+            <label className="text-xs font-medium text-text-secondary">Product to Survey *</label>
 
-            {/* Selected products chips */}
-            {selectedAnvisaProducts.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2 mb-2">
-                {selectedAnvisaProducts.map((p) => (
-                  <span key={p.id} className="flex items-center gap-1 bg-brand-dim text-brand text-xs font-medium px-2 py-1 rounded-lg max-w-xs">
-                    <span className="truncate">{p.produto}</span>
-                    <span className="text-brand/60 shrink-0">· {p.apresentacao}</span>
-                    <button type="button" onClick={() => removeProduct(p.id)} className="hover:text-brand/70 shrink-0">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
+            {mainProduct ? (
+              <div className="mt-1 rounded-lg border-2 border-brand bg-brand/5 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Pill className="h-4 w-4 text-brand shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-brand">{mainProduct.produto}</p>
+                    <p className="text-[11px] text-text-tertiary">{mainProduct.apresentacao}</p>
+                    <p className="text-[11px] text-text-tertiary">{mainProduct.substancia} · {mainProduct.laboratorio ?? '—'} · {mainProduct.tipoProduto}</p>
+                  </div>
+                  <button type="button" onClick={clearMainProduct} className="text-text-tertiary hover:text-red-500 shrink-0">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            )}
+            ) : (
+              <>
+                <div className="flex gap-2 mt-1">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-text-tertiary" />
+                    <input
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setProductSearchQuery(productSearch); } }}
+                      placeholder="Search the product you want to survey..."
+                      className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border text-sm focus:outline-brand focus:border-brand"
+                    />
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setProductSearchQuery(productSearch)}>
+                    Search
+                  </Button>
+                </div>
 
-            {/* Search input */}
-            <div className="flex gap-2 mt-1">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-text-tertiary" />
-                <input
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setProductSearchQuery(productSearch); } }}
-                  placeholder="Search product name or active ingredient..."
-                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border text-sm focus:outline-brand focus:border-brand"
-                />
-              </div>
-              <Button type="button" size="sm" variant="secondary" onClick={() => setProductSearchQuery(productSearch)}>
-                Search
-              </Button>
-            </div>
-
-            {/* Search results */}
-            {productSearchQuery && anvisaResults.data && (
-              <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border-dim">
-                {anvisaResults.data.data.length === 0 ? (
-                  <p className="text-xs text-text-tertiary px-3 py-2">No products found</p>
-                ) : (
-                  anvisaResults.data.data.map((p) => {
-                    const alreadySelected = selectedAnvisaProducts.some((s) => s.id === p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        disabled={alreadySelected}
-                        onClick={() => addProduct(p)}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm ${
-                          alreadySelected ? 'opacity-50 cursor-default' : 'hover:bg-surface-hover cursor-pointer'
-                        }`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <span className="font-medium">{p.produto}</span>
-                          <p className="text-[11px] text-text-tertiary truncate">{p.apresentacao}</p>
-                        </div>
-                        <span className="text-[11px] text-text-tertiary shrink-0">{p.laboratorio ?? '—'}</span>
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
-                          p.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
-                          p.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
-                          'bg-blue-50 text-blue-700'
-                        }`}>
-                          {p.tipoProduto}
-                        </span>
-                        {alreadySelected && <span className="text-[10px] text-text-tertiary shrink-0">Added</span>}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* Competitors panel — same substance as first selected product */}
-            {firstProduct && competitorList.length > 0 && (
-              <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/50">
-                <button
-                  type="button"
-                  onClick={() => setShowCompetitors(!showCompetitors)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left"
-                >
-                  <Users className="h-3.5 w-3.5 text-purple-600" />
-                  <span className="text-xs font-medium text-purple-700 flex-1">
-                    Competitors ({firstProduct.substancia}) — {competitorList.length} products
-                  </span>
-                  {showCompetitors
-                    ? <ChevronUp className="h-3.5 w-3.5 text-purple-400" />
-                    : <ChevronDown className="h-3.5 w-3.5 text-purple-400" />}
-                </button>
-                {showCompetitors && (
-                  <div className="max-h-40 overflow-y-auto border-t border-purple-200 divide-y divide-purple-100">
-                    {competitorList.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => addProduct(c)}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-purple-100/50"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium">{c.produto}</span>
-                          <p className="text-[11px] text-text-tertiary truncate">{c.apresentacao}</p>
-                        </div>
-                        <span className="text-[11px] text-text-tertiary shrink-0">{c.laboratorio ?? '—'}</span>
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
-                          c.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
-                          c.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
-                          'bg-blue-50 text-blue-700'
-                        }`}>
-                          {c.tipoProduto}
-                        </span>
-                      </button>
-                    ))}
+                {productSearchQuery && anvisaResults.data && (
+                  <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border-dim">
+                    {anvisaResults.data.data.length === 0 ? (
+                      <p className="text-xs text-text-tertiary px-3 py-2">No products found</p>
+                    ) : (
+                      anvisaResults.data.data.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => selectMainProduct(p)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-hover cursor-pointer"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium">{p.produto}</span>
+                            <p className="text-[11px] text-text-tertiary truncate">{p.apresentacao}</p>
+                          </div>
+                          <span className="text-[11px] text-text-tertiary shrink-0">{p.laboratorio ?? '—'}</span>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
+                            p.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
+                            p.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
+                            'bg-blue-50 text-blue-700'
+                          }`}>
+                            {p.tipoProduto}
+                          </span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
+
+          {/* Competitors — same substance, shown after main product is selected */}
+          {mainProduct && (
+            <div>
+              <label className="text-xs font-medium text-text-secondary">
+                Competitors ({selectedCompetitors.length} selected)
+              </label>
+              <p className="text-[10px] text-text-tertiary mt-0.5">
+                Same substance: {mainProduct.substancia}. Select competitors to also inquire about.
+              </p>
+
+              {/* Selected competitor chips */}
+              {selectedCompetitors.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {selectedCompetitors.map((p) => (
+                    <span key={p.id} className="flex items-center gap-1 bg-purple-100 text-purple-700 text-xs font-medium px-2 py-1 rounded-lg max-w-xs">
+                      <span className="truncate">{p.produto}</span>
+                      <span className="text-purple-400 shrink-0">· {p.apresentacao}</span>
+                      <button type="button" onClick={() => removeCompetitor(p.id)} className="hover:text-red-500 shrink-0">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Competitors list */}
+              {competitorList.length > 0 && (
+                <div className="mt-2 rounded-lg border border-purple-200 bg-purple-50/50">
+                  <button
+                    type="button"
+                    onClick={() => setShowCompetitors(!showCompetitors)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                  >
+                    <Users className="h-3.5 w-3.5 text-purple-600" />
+                    <span className="text-xs font-medium text-purple-700 flex-1">
+                      Available competitors — {competitorList.length} products
+                      {exactMatchCount > 0 && ` (${exactMatchCount} same presentation)`}
+                    </span>
+                    {showCompetitors
+                      ? <ChevronUp className="h-3.5 w-3.5 text-purple-400" />
+                      : <ChevronDown className="h-3.5 w-3.5 text-purple-400" />}
+                  </button>
+                  {showCompetitors && (
+                    <div className="max-h-48 overflow-y-auto border-t border-purple-200">
+                      {exactMatchCount > 0 && competitorList.some((c) => c.apresentacao === mainProduct.apresentacao) && (
+                        <div className="px-3 py-1 bg-purple-100/60 text-[10px] font-medium text-purple-600 uppercase tracking-wider">
+                          Same presentation
+                        </div>
+                      )}
+                      {competitorList.map((c, i) => {
+                        const isFirstOther = i === exactMatchCount && exactMatchCount > 0;
+                        return (
+                          <div key={c.id}>
+                            {isFirstOther && (
+                              <div className="px-3 py-1 bg-purple-50 text-[10px] font-medium text-purple-400 uppercase tracking-wider border-t border-purple-200">
+                                Other presentations
+                              </div>
+                            )}
+                            <div className="border-t border-purple-100">
+                              <CompetitorRow product={c} onAdd={addCompetitor} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {competitors.isLoading && (
+                <p className="text-xs text-text-tertiary mt-2">Loading competitors...</p>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end">
             <Button type="submit" disabled={create.isPending || !canSubmit}>
@@ -625,7 +700,8 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [scriptId, setScriptId] = useState('');
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
-  const [selectedAnvisaProducts, setSelectedAnvisaProducts] = useState<AnvisaProduct[]>([]);
+  const [mainProduct, setMainProduct] = useState<AnvisaProduct | null>(null);
+  const [selectedCompetitors, setSelectedCompetitors] = useState<AnvisaProduct[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [showProductResults, setShowProductResults] = useState(false);
   const [showCompetitors, setShowCompetitors] = useState(true);
@@ -639,11 +715,10 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
     enabled: productSearch.length >= 2,
   });
 
-  const firstProduct = selectedAnvisaProducts[0];
   const competitors = useQuery({
-    queryKey: ['anvisa-competitors-group', firstProduct?.substancia],
-    queryFn: () => api.anvisa.bySubstance(firstProduct!.substancia),
-    enabled: !!firstProduct?.substancia,
+    queryKey: ['anvisa-competitors-group', mainProduct?.substancia],
+    queryFn: () => api.anvisa.bySubstance(mainProduct!.substancia),
+    enabled: !!mainProduct?.substancia,
   });
 
   // Show which states have sessions assigned
@@ -665,26 +740,44 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
     setSelectedStates((prev) => prev.includes(st) ? prev.filter((s) => s !== st) : [...prev, st]);
   }
 
-  function addAnvisaProduct(p: AnvisaProduct) {
-    if (!selectedAnvisaProducts.find((s) => s.id === p.id)) {
-      setSelectedAnvisaProducts((prev) => [...prev, p]);
-    }
+  function selectMainProduct(p: AnvisaProduct) {
+    setMainProduct(p);
+    setSelectedCompetitors([]);
     setProductSearch('');
     setShowProductResults(false);
   }
 
-  function removeAnvisaProduct(id: string) {
-    setSelectedAnvisaProducts((prev) => prev.filter((p) => p.id !== id));
+  function addCompetitor(p: AnvisaProduct) {
+    if (!selectedCompetitors.find((s) => s.id === p.id)) {
+      setSelectedCompetitors((prev) => [...prev, p]);
+    }
   }
 
-  const canSubmit = name && scriptId && selectedStates.length > 0 && selectedAnvisaProducts.length > 0;
+  function removeCompetitor(id: string) {
+    setSelectedCompetitors((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  function clearMainProduct() {
+    setMainProduct(null);
+    setSelectedCompetitors([]);
+  }
+
+  const canSubmit = name && scriptId && selectedStates.length > 0 && mainProduct;
+
+  const allIds = selectedCompetitors.map((c) => c.id);
+  if (mainProduct) allIds.unshift(mainProduct.id);
 
   // Check if all selected states have sessions
   const statesWithoutSession = selectedStates.filter((st) => !statesWithSessions.has(st));
 
-  const competitorList = (competitors.data?.products ?? []).filter(
-    (c) => !selectedAnvisaProducts.some((s) => s.id === c.id),
+  const competitorList = sortCompetitors(
+    (competitors.data?.products ?? []).filter(
+      (c) => c.id !== mainProduct?.id && !selectedCompetitors.some((s) => s.id === c.id),
+    ),
+    mainProduct?.apresentacao ?? '',
   );
+
+  const exactMatchCount = competitorList.filter((c) => c.apresentacao === mainProduct?.apresentacao).length;
 
   return (
     <Card>
@@ -703,7 +796,7 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
             create.mutate({
               name,
               scriptId,
-              anvisaProductIds: selectedAnvisaProducts.map((p) => p.id),
+              anvisaProductIds: allIds,
               targetStates: selectedStates,
             });
           }}
@@ -774,126 +867,151 @@ function CreateCampaignGroupForm({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          {/* Products — Anvisa search */}
+          {/* Main product — the product being surveyed */}
           <div>
-            <label className="text-xs font-medium text-text-secondary">
-              Products * ({selectedAnvisaProducts.length} selected)
-            </label>
+            <label className="text-xs font-medium text-text-secondary">Product to Survey *</label>
 
-            {/* Selected product chips */}
-            {selectedAnvisaProducts.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {selectedAnvisaProducts.map((p) => (
-                  <span
-                    key={p.id}
-                    className="inline-flex items-center gap-1 rounded-full bg-brand/10 text-brand px-2.5 py-1 text-xs max-w-xs"
-                  >
-                    <span className="truncate">{p.produto}</span>
-                    <span className="text-brand/60 shrink-0">· {p.apresentacao}</span>
-                    <button type="button" onClick={() => removeAnvisaProduct(p.id)} className="hover:text-red-500 shrink-0">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
+            {mainProduct ? (
+              <div className="mt-1 rounded-lg border-2 border-brand bg-brand/5 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Pill className="h-4 w-4 text-brand shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-brand">{mainProduct.produto}</p>
+                    <p className="text-[11px] text-text-tertiary">{mainProduct.apresentacao}</p>
+                    <p className="text-[11px] text-text-tertiary">{mainProduct.substancia} · {mainProduct.laboratorio ?? '—'} · {mainProduct.tipoProduto}</p>
+                  </div>
+                  <button type="button" onClick={clearMainProduct} className="text-text-tertiary hover:text-red-500 shrink-0">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="relative mt-1">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-text-tertiary" />
+                  <input
+                    value={productSearch}
+                    onChange={(e) => {
+                      setProductSearch(e.target.value);
+                      setShowProductResults(true);
+                    }}
+                    onFocus={() => productSearch.length >= 2 && setShowProductResults(true)}
+                    placeholder="Search the product you want to survey..."
+                    className="w-full rounded-lg border border-border pl-8 pr-3 py-2 text-sm focus:outline-brand focus:border-brand"
+                  />
+
+                  {showProductResults && productSearch.length >= 2 && (
+                    <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg divide-y divide-border-dim">
+                      {anvisaResults.isLoading ? (
+                        <p className="text-xs text-text-tertiary px-3 py-2">Searching...</p>
+                      ) : anvisaResults.data?.data.length === 0 ? (
+                        <p className="text-xs text-text-tertiary px-3 py-2">No results found</p>
+                      ) : (
+                        anvisaResults.data?.data.map((r) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => selectMainProduct(r)}
+                            className="w-full text-left px-3 py-2 hover:bg-surface-hover"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium flex-1">{r.produto}</span>
+                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
+                                r.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
+                                r.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
+                                'bg-blue-50 text-blue-700'
+                              }`}>
+                                {r.tipoProduto}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-text-tertiary truncate">{r.apresentacao}</p>
+                            <p className="text-[11px] text-text-tertiary">
+                              {r.substancia} · {r.laboratorio ?? '—'}
+                            </p>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
+          </div>
 
-            {/* Search input */}
-            <div className="relative mt-1.5">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-text-tertiary" />
-              <input
-                value={productSearch}
-                onChange={(e) => {
-                  setProductSearch(e.target.value);
-                  setShowProductResults(true);
-                }}
-                onFocus={() => productSearch.length >= 2 && setShowProductResults(true)}
-                placeholder="Search Anvisa catalog (name, substance, lab)..."
-                className="w-full rounded-lg border border-border pl-8 pr-3 py-2 text-sm focus:outline-brand focus:border-brand"
-              />
+          {/* Competitors — same substance, shown after main product is selected */}
+          {mainProduct && (
+            <div>
+              <label className="text-xs font-medium text-text-secondary">
+                Competitors ({selectedCompetitors.length} selected)
+              </label>
+              <p className="text-[10px] text-text-tertiary mt-0.5">
+                Same substance: {mainProduct.substancia}. Select competitors to also inquire about.
+              </p>
 
-              {/* Dropdown results */}
-              {showProductResults && productSearch.length >= 2 && (
-                <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg divide-y divide-border-dim">
-                  {anvisaResults.isLoading ? (
-                    <p className="text-xs text-text-tertiary px-3 py-2">Searching...</p>
-                  ) : anvisaResults.data?.data.length === 0 ? (
-                    <p className="text-xs text-text-tertiary px-3 py-2">No results found</p>
-                  ) : (
-                    anvisaResults.data?.data
-                      .filter((r) => !selectedAnvisaProducts.find((s) => s.id === r.id))
-                      .map((r) => (
-                        <button
-                          key={r.id}
-                          type="button"
-                          onClick={() => addAnvisaProduct(r)}
-                          className="w-full text-left px-3 py-2 hover:bg-surface-hover"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium flex-1">{r.produto}</span>
-                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
-                              r.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
-                              r.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
-                              'bg-blue-50 text-blue-700'
-                            }`}>
-                              {r.tipoProduto}
-                            </span>
+              {/* Selected competitor chips */}
+              {selectedCompetitors.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {selectedCompetitors.map((p) => (
+                    <span key={p.id} className="flex items-center gap-1 bg-purple-100 text-purple-700 text-xs font-medium px-2 py-1 rounded-lg max-w-xs">
+                      <span className="truncate">{p.produto}</span>
+                      <span className="text-purple-400 shrink-0">· {p.apresentacao}</span>
+                      <button type="button" onClick={() => removeCompetitor(p.id)} className="hover:text-red-500 shrink-0">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Competitors list */}
+              {competitorList.length > 0 && (
+                <div className="mt-2 rounded-lg border border-purple-200 bg-purple-50/50">
+                  <button
+                    type="button"
+                    onClick={() => setShowCompetitors(!showCompetitors)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                  >
+                    <Users className="h-3.5 w-3.5 text-purple-600" />
+                    <span className="text-xs font-medium text-purple-700 flex-1">
+                      Available competitors — {competitorList.length} products
+                      {exactMatchCount > 0 && ` (${exactMatchCount} same presentation)`}
+                    </span>
+                    {showCompetitors
+                      ? <ChevronUp className="h-3.5 w-3.5 text-purple-400" />
+                      : <ChevronDown className="h-3.5 w-3.5 text-purple-400" />}
+                  </button>
+                  {showCompetitors && (
+                    <div className="max-h-48 overflow-y-auto border-t border-purple-200">
+                      {exactMatchCount > 0 && competitorList.some((c) => c.apresentacao === mainProduct.apresentacao) && (
+                        <div className="px-3 py-1 bg-purple-100/60 text-[10px] font-medium text-purple-600 uppercase tracking-wider">
+                          Same presentation
+                        </div>
+                      )}
+                      {competitorList.map((c, i) => {
+                        const isFirstOther = i === exactMatchCount && exactMatchCount > 0;
+                        return (
+                          <div key={c.id}>
+                            {isFirstOther && (
+                              <div className="px-3 py-1 bg-purple-50 text-[10px] font-medium text-purple-400 uppercase tracking-wider border-t border-purple-200">
+                                Other presentations
+                              </div>
+                            )}
+                            <div className="border-t border-purple-100">
+                              <CompetitorRow product={c} onAdd={addCompetitor} />
+                            </div>
                           </div>
-                          <p className="text-[11px] text-text-tertiary truncate">{r.apresentacao}</p>
-                          <p className="text-[11px] text-text-tertiary">
-                            {r.substancia} · {r.laboratorio ?? '—'}
-                          </p>
-                        </button>
-                      ))
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               )}
-            </div>
 
-            {/* Competitors panel — same substance as first selected product */}
-            {firstProduct && competitorList.length > 0 && (
-              <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/50">
-                <button
-                  type="button"
-                  onClick={() => setShowCompetitors(!showCompetitors)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left"
-                >
-                  <Users className="h-3.5 w-3.5 text-purple-600" />
-                  <span className="text-xs font-medium text-purple-700 flex-1">
-                    Competitors ({firstProduct.substancia}) — {competitorList.length} products
-                  </span>
-                  {showCompetitors
-                    ? <ChevronUp className="h-3.5 w-3.5 text-purple-400" />
-                    : <ChevronDown className="h-3.5 w-3.5 text-purple-400" />}
-                </button>
-                {showCompetitors && (
-                  <div className="max-h-40 overflow-y-auto border-t border-purple-200 divide-y divide-purple-100">
-                    {competitorList.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => addAnvisaProduct(c)}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-purple-100/50"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium">{c.produto}</span>
-                          <p className="text-[11px] text-text-tertiary truncate">{c.apresentacao}</p>
-                        </div>
-                        <span className="text-[11px] text-text-tertiary shrink-0">{c.laboratorio ?? '—'}</span>
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
-                          c.tipoProduto === 'Genérico' ? 'bg-green-50 text-green-700' :
-                          c.tipoProduto === 'Similar' ? 'bg-amber-50 text-amber-700' :
-                          'bg-blue-50 text-blue-700'
-                        }`}>
-                          {c.tipoProduto}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+              {competitors.isLoading && (
+                <p className="text-xs text-text-tertiary mt-2">Loading competitors...</p>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             {statesWithoutSession.length > 0 && selectedStates.length > 0 && (
