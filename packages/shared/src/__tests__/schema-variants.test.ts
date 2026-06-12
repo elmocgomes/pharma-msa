@@ -52,7 +52,7 @@ describe('ClassifyNode rule overrides', () => {
       timeout_next: 'timeout',
     });
     expect(node.customRules).toHaveLength(1);
-    expect(node.customRules![0].patterns).toHaveLength(2);
+    expect(node.customRules![0]!.patterns).toHaveLength(2);
   });
 
   it('works inside FlowTree', () => {

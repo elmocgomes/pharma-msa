@@ -60,5 +60,5 @@ const RESPONSE_TEMPLATES: Record<PersonalQuestionType, ((p: Persona) => string)[
 export function buildPersonalResponse(questionType: PersonalQuestionType, persona: Persona): string {
   const templates = RESPONSE_TEMPLATES[questionType];
   const idx = Math.floor(Math.random() * templates.length);
-  return templates[idx](persona);
+  return templates[idx]!(persona);
 }
