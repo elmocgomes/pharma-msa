@@ -73,6 +73,8 @@ export const api = {
       request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<{ status: string }>(`/products/${id}`, { method: 'DELETE' }),
+    fromAnvisa: (anvisaId: string) =>
+      request<Product>(`/products/from-anvisa/${anvisaId}`, { method: 'POST' }),
   },
   scripts: {
     list: () => request<Script[]>('/scripts'),
