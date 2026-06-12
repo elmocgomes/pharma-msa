@@ -92,6 +92,13 @@ if (process.env.ANTHROPIC_API_KEY) {
   app.route('/prompt-chat', createPromptChatRoutes(db, chatProvider));
 }
 
+// Seed default prompts on startup (idempotent, uses ON CONFLICT DO NOTHING)
+import('@pharma/ai').then(({ seedDefaultPrompts }) => {
+  seedDefaultPrompts(db).catch((err: unknown) =>
+    console.warn('[SEED] Failed to seed prompts:', err),
+  );
+}).catch(() => { /* @pharma/ai not available, skip */ });
+
 const port = parseInt(process.env.PORT ?? '3000', 10);
 
 serve({ fetch: app.fetch, port }, () => {
