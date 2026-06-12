@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, numeric, boolean, timestamp, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, numeric, boolean, integer, timestamp, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
 import { conversations } from './conversations.js';
 import { products } from './products.js';
 import type { ExtractorResult } from '@pharma/shared';
@@ -25,5 +25,12 @@ export const productFindings = pgTable('product_findings', {
   genericPrices: numeric('generic_prices', { precision: 10, scale: 2 }).array(),
   alternativeNames: text('alternative_names').array(),
   notes: text('notes'),
+  productType: text('product_type', {
+    enum: ['reference', 'similar', 'generic'],
+  }),
+  laboratory: text('laboratory'),
+  dosageMentioned: text('dosage_mentioned'),
+  quantityMentioned: integer('quantity_mentioned'),
+  formMentioned: text('form_mentioned'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

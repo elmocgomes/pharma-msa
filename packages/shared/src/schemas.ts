@@ -165,3 +165,53 @@ export const ExtractorResultSchema = z.object({
 });
 
 export type ExtractorResult = z.infer<typeof ExtractorResultSchema>;
+
+// ── Product Classification ──
+
+export const ProductTypeSchema = z.enum(['reference', 'similar', 'generic']);
+export type ProductType = z.infer<typeof ProductTypeSchema>;
+
+export const ProductPresentationSchema = z.object({
+  dosage: z.string().optional(),
+  quantity: z.number().optional(),
+  form: z.string().optional(),
+});
+export type ProductPresentation = z.infer<typeof ProductPresentationSchema>;
+
+export const EnrichedProductFindingSchema = z.object({
+  product_name_mentioned: z.string(),
+  product_type: ProductTypeSchema,
+  laboratory: z.string().nullable().default(null),
+  is_available: z.boolean().nullable().default(null),
+  price: z.number().nullable().default(null),
+  price_currency: z.literal('BRL').default('BRL'),
+  presentation: ProductPresentationSchema.optional(),
+  notes: z.string().default(''),
+});
+export type EnrichedProductFinding = z.infer<typeof EnrichedProductFindingSchema>;
+
+export const EnrichedExtractorResultSchema = z.object({
+  reference_product: z.string(),
+  findings: z.array(EnrichedProductFindingSchema),
+  conversation_quality: z.enum(['complete', 'partial', 'poor']),
+  pharmacy_responsiveness: z.enum(['cooperative', 'neutral', 'uncooperative']),
+  pharmacy_asked_for_prescription: z.boolean().default(false),
+  pharmacy_offered_delivery: z.boolean().default(false),
+});
+export type EnrichedExtractorResult = z.infer<typeof EnrichedExtractorResultSchema>;
+
+export const MentionedProductSchema = z.object({
+  name_as_mentioned: z.string(),
+  product_type: ProductTypeSchema,
+  laboratory: z.string().nullable().default(null),
+  presentation: ProductPresentationSchema.optional(),
+  price: z.number().nullable().default(null),
+  is_available: z.boolean().nullable().default(null),
+});
+
+export const ProductIdentificationSchema = z.object({
+  products_mentioned: z.array(MentionedProductSchema),
+  confidence: z.number(),
+  reasoning: z.string(),
+});
+export type ProductIdentification = z.infer<typeof ProductIdentificationSchema>;
