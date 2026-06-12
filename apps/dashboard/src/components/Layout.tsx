@@ -8,6 +8,7 @@ import {
   Pill,
   Building2,
   Activity,
+  FileText,
 } from 'lucide-react';
 
 const navigation = [
@@ -17,6 +18,7 @@ const navigation = [
   { name: 'Conversations', href: '/conversations', icon: MessageSquare },
   { name: 'Pharmacies', href: '/pharmacies', icon: Building2 },
   { name: 'Products', href: '/products', icon: Pill },
+  { name: 'Prompts', href: '/prompts', icon: FileText },
 ];
 
 export function Layout() {

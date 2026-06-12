@@ -19,6 +19,9 @@ import { createScriptRoutes } from './routes/scripts.js';
 import { createCampaignRoutes } from './routes/campaigns.js';
 import { createConversationRoutes } from './routes/conversations.js';
 import { createResultRoutes } from './routes/results.js';
+import { createPromptRoutes } from './routes/prompts.js';
+import { createPromptChatRoutes } from './routes/prompt-chat.js';
+import { createReportRoutes } from './routes/reports.js';
 import { errorHandler } from './middleware/error-handler.js';
 
 // Resolve hostnames to IPs at startup to bypass Docker DNS for long-lived connections
@@ -74,6 +77,18 @@ app.route('/scripts', createScriptRoutes(db));
 app.route('/campaigns', createCampaignRoutes(db, redisConnection));
 app.route('/conversations', createConversationRoutes(db));
 app.route('/results', createResultRoutes(db));
+app.route('/prompts', createPromptRoutes(db));
+app.route('/reports', createReportRoutes(db, redisConnection));
+
+// Prompt chat requires ANTHROPIC_API_KEY
+if (process.env.ANTHROPIC_API_KEY) {
+  const { AnthropicProvider } = await import('@pharma/ai');
+  const chatProvider = new AnthropicProvider(
+    process.env.ANTHROPIC_API_KEY,
+    'claude-sonnet-4-20250514',
+  );
+  app.route('/prompt-chat', createPromptChatRoutes(db, chatProvider));
+}
 
 const port = parseInt(process.env.PORT ?? '3000', 10);
 

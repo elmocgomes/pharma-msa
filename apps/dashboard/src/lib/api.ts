@@ -60,6 +60,23 @@ export const api = {
     list: () => request<Product[]>('/products'),
   },
   health: () => request<{ status: string; timestamp: string }>('/health'),
+  prompts: {
+    list: () => request<Record<string, AgentPrompt[]>>('/prompts'),
+    get: (id: string) => request<AgentPromptWithVersions>(`/prompts/${id}`),
+    update: (id: string, data: { content: string; changeReason?: string }) =>
+      request<AgentPrompt>(`/prompts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    revert: (id: string, version: number) =>
+      request<AgentPrompt>(`/prompts/${id}/revert/${version}`, { method: 'POST' }),
+    chat: (message: string) =>
+      request<{ response: string; usage: { inputTokens: number; outputTokens: number } }>(
+        '/prompt-chat', { method: 'POST', body: JSON.stringify({ message }) },
+      ),
+  },
+  reports: {
+    get: (campaignId: string) => request<CampaignReportData>(`/reports/campaigns/${campaignId}/report`),
+    generate: (campaignId: string) =>
+      request<{ status: string }>(`/reports/campaigns/${campaignId}/analyze`, { method: 'POST' }),
+  },
 };
 
 // Types
@@ -202,5 +219,57 @@ export interface Product {
   activeIngredient: string | null;
   category: string | null;
   brand: string | null;
+  createdAt: string;
+}
+
+export interface AgentPrompt {
+  id: string;
+  agentName: string;
+  promptType: string;
+  content: string;
+  version: number;
+  isActive: boolean;
+  metadata: { description?: string; model?: string; temperature?: number; maxTokens?: number } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromptVersion {
+  id: string;
+  promptId: string;
+  version: number;
+  content: string;
+  changedBy: string | null;
+  changeReason: string | null;
+  createdAt: string;
+}
+
+export interface AgentPromptWithVersions extends AgentPrompt {
+  versions: PromptVersion[];
+}
+
+export interface CampaignReportData {
+  id: string;
+  campaignId: string;
+  report: {
+    campaign_id: string;
+    reference_product: string;
+    total_pharmacies_contacted: number;
+    total_pharmacies_responded: number;
+    summary: {
+      reference_availability_rate: number;
+      reference_avg_price: number | null;
+      reference_price_range: { min: number | null; max: number | null };
+      similares_found: Array<{ name: string; laboratory: string | null; availability_rate: number; avg_price: number | null; pharmacies_offering: number }>;
+      generics_found: Array<{ name: string; laboratory: string | null; availability_rate: number; avg_price: number | null; pharmacies_offering: number }>;
+      prescription_required_rate: number;
+      delivery_offered_rate: number;
+      avg_conversation_quality: string;
+      avg_pharmacy_responsiveness: string;
+    };
+    insights: string[];
+    recommendations: string[];
+    generated_at: string;
+  };
   createdAt: string;
 }

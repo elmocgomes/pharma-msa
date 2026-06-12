@@ -8,6 +8,7 @@ import { ConversationsPage } from '@/pages/ConversationsPage';
 import { ConversationDetailPage } from '@/pages/ConversationDetailPage';
 import { PharmaciesPage } from '@/pages/PharmaciesPage';
 import { ProductsPage } from '@/pages/ProductsPage';
+import { PromptsPage } from '@/pages/PromptsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="/conversations/:id" element={<ConversationDetailPage />} />
             <Route path="/pharmacies" element={<PharmaciesPage />} />
             <Route path="/products" element={<ProductsPage />} />
+            <Route path="/prompts" element={<PromptsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

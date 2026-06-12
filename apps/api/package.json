@@ -15,6 +15,7 @@
     "@hono/node-server": "^1.13.0",
     "bullmq": "^5.30.0",
     "drizzle-orm": "^0.44.0",
+    "@pharma/ai": "workspace:*",
     "@pharma/db": "workspace:*",
     "@pharma/whatsapp": "workspace:*",
     "@pharma/shared": "workspace:*"
