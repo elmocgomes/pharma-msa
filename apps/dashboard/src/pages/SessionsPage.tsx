@@ -296,9 +296,9 @@ function PersonaSection({ session }: { session: Session }) {
           <InfoBlock label="CPF" value={session.personaCpf ?? '-'} />
           <InfoBlock label="Age" value={details.age ? String(details.age) : '-'} />
           <InfoBlock label="Neighborhood" value={details.neighborhood ? String(details.neighborhood) : '-'} />
-          {details.backstory && (
+          {typeof details.backstory === 'string' && details.backstory && (
             <div className="col-span-2">
-              <InfoBlock label="Backstory" value={String(details.backstory)} />
+              <InfoBlock label="Backstory" value={details.backstory} />
             </div>
           )}
         </div>
