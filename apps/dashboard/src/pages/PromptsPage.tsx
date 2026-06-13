@@ -49,7 +49,7 @@ export function PromptsPage() {
   });
 
   const chatMutation = useMutation({
-    mutationFn: (message: string) => api.prompts.chat(message),
+    mutationFn: (message: string) => api.prompts.chat(message, chatHistory),
     onSuccess: (data, message) => {
       setChatHistory(prev => [
         ...prev,
@@ -57,6 +57,10 @@ export function PromptsPage() {
         { role: 'assistant', content: data.response ?? '' },
       ]);
       setChatMessage('');
+      if (data.toolsUsed?.includes('update_prompt')) {
+        queryClient.invalidateQueries({ queryKey: ['prompts'] });
+        queryClient.invalidateQueries({ queryKey: ['prompt', selectedPromptId] });
+      }
     },
   });
 

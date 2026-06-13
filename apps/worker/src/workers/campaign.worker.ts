@@ -4,6 +4,7 @@ import {
   type Db, campaigns, campaignPharmacies, campaignProducts, products,
   conversations, pharmacies,
 } from '@pharma/db';
+import { formatProductForInquiry } from '@pharma/shared';
 import type { CampaignJobData } from '../queues/definitions.js';
 
 export function createCampaignWorker(db: Db, redis: ConnectionOptions) {
@@ -52,7 +53,7 @@ export function createCampaignWorker(db: Db, redis: ConnectionOptions) {
         if (spawned >= settings.concurrent_limit) break;
 
         const variables: Record<string, string> = {
-          product_name: firstProduct.name,
+          product_name: formatProductForInquiry(firstProduct),
           active_ingredient: firstProduct.activeIngredient ?? '',
           brand: firstProduct.brand ?? '',
           dosage: firstProduct.dosage ?? '',

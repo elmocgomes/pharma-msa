@@ -6,6 +6,7 @@ import {
 } from '@pharma/db';
 import { FlowTreeSchema, type FlowNode } from '@pharma/shared';
 import { WhatsAppClient } from '@pharma/whatsapp';
+import { formatProductForInquiry } from '@pharma/shared';
 import { interpolateMessage, selectMessage } from './message-builder.js';
 import { transition } from './state-machine.js';
 import type { ConnectionOptions } from 'bullmq';
@@ -181,7 +182,7 @@ export class ScriptRunner {
     if (nextProduct) {
       const vars = {
         ...(freshConv.variables as Record<string, string>),
-        product_name: nextProduct.product.name,
+        product_name: formatProductForInquiry(nextProduct.product),
         active_ingredient: nextProduct.product.activeIngredient ?? '',
         brand: nextProduct.product.brand ?? '',
         dosage: nextProduct.product.dosage ?? '',

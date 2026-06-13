@@ -6,3 +6,4 @@ export * from './rules/pharmacy-rules.js';
 export * from './rules/personal.js';
 export * from './templates/standard-inquiry.js';
 export * from './apresentacao-parser.js';
+export * from './product-display.js';

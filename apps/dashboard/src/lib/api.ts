@@ -88,9 +88,9 @@ export const api = {
       request<AgentPrompt>(`/prompts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     revert: (id: string, version: number) =>
       request<AgentPrompt>(`/prompts/${id}/revert/${version}`, { method: 'POST' }),
-    chat: (message: string) =>
-      request<{ response: string; usage: { inputTokens: number; outputTokens: number } }>(
-        '/prompt-chat', { method: 'POST', body: JSON.stringify({ message }) },
+    chat: (message: string, messages?: Array<{ role: 'user' | 'assistant'; content: string }>) =>
+      request<{ response: string; toolsUsed?: string[]; usage: { inputTokens: number; outputTokens: number } }>(
+        '/prompt-chat', { method: 'POST', body: JSON.stringify({ message, messages }) },
       ),
   },
   reports: {
