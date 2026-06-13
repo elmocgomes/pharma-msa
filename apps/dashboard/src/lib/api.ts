@@ -58,13 +58,36 @@ export const api = {
     extraction: (id: string) => request<ExtractionResult>(`/conversations/${id}/extraction`),
   },
   pharmacies: {
-    list: () => request<Pharmacy[]>('/pharmacies'),
+    list: (params?: { page?: number; limit?: number; q?: string; state?: string; chain?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.page) qs.set('page', String(params.page));
+      if (params?.limit) qs.set('limit', String(params.limit));
+      if (params?.q) qs.set('q', params.q);
+      if (params?.state) qs.set('state', params.state);
+      if (params?.chain) qs.set('chain', params.chain);
+      return request<PharmacyListResult>(`/pharmacies?${qs.toString()}`);
+    },
+    chains: () => request<ChainCount[]>('/pharmacies/chains'),
+    states: () => request<StateCount[]>('/pharmacies/states'),
     create: (data: { name: string; phoneNumber: string; city?: string; state?: string; notes?: string }) =>
       request<Pharmacy>('/pharmacies', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Pharmacy>) =>
       request<Pharmacy>(`/pharmacies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<{ status: string }>(`/pharmacies/${id}`, { method: 'DELETE' }),
+  },
+  scraper: {
+    stats: () => request<{
+      total: number; withWhatsApp: number; verified: number;
+      withChain: number; withAssociation: number;
+      topChains: { name: string; count: number }[];
+    }>('/scraper/stats'),
+    detectChains: () =>
+      request<{ updated: number }>('/scraper/detect-chains', { method: 'POST' }),
+    whatsappCheck: (sessionId: string, state?: string, limit?: number) =>
+      request<{ checked: number; withWhatsApp: number; results: { id: string; name: string; phone: string; isWhatsApp: boolean }[] }>(
+        '/scraper/whatsapp-check', { method: 'POST', body: JSON.stringify({ sessionId, state, limit }) },
+      ),
   },
   products: {
     list: () => request<Product[]>('/products'),
@@ -296,7 +319,49 @@ export interface Pharmacy {
   phoneNumber: string;
   city: string | null;
   state: string | null;
+  notes: string | null;
+  cnpj: string | null;
+  matrizFilial: string | null;
+  razaoSocial: string | null;
+  nomeFantasia: string | null;
+  phone2: string | null;
+  email: string | null;
+  cnaePrimario: string | null;
+  cnaeDescricao: string | null;
+  tipoLogradouro: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cep: string | null;
+  codigoMunicipio: number | null;
+  porte: string | null;
+  naturezaJuridica: string | null;
+  dataAtividade: string | null;
+  dataSituacao: string | null;
+  chainName: string | null;
+  associationName: string | null;
+  whatsappNumber: string | null;
+  whatsappVerified: boolean;
+  lastScrapedAt: string | null;
+  scrapeSource: string | null;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface PharmacyListResult {
+  data: Pharmacy[];
+  pagination: { page: number; limit: number; total: number; pages: number };
+}
+
+export interface ChainCount {
+  chainName: string;
+  count: number;
+}
+
+export interface StateCount {
+  state: string;
+  count: number;
 }
 
 export interface Product {

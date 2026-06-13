@@ -26,6 +26,7 @@ import { createMigrateRoutes } from './routes/migrate.js';
 import { createAnvisaRoutes } from './routes/anvisa.js';
 import { createCampaignGroupRoutes } from './routes/campaign-groups.js';
 import { createTrainingRoutes } from './routes/training.js';
+import { createScraperRoutes } from './routes/scraper.js';
 import { errorHandler } from './middleware/error-handler.js';
 
 // Resolve hostnames to IPs at startup to bypass Docker DNS for long-lived connections
@@ -86,6 +87,7 @@ app.route('/reports', createReportRoutes(db, redisConnection));
 app.route('/migrate', createMigrateRoutes());
 app.route('/anvisa', createAnvisaRoutes(db));
 app.route('/campaign-groups', createCampaignGroupRoutes(db));
+app.route('/scraper', createScraperRoutes(db, waClient));
 
 // AI-powered routes require ANTHROPIC_API_KEY
 if (process.env.ANTHROPIC_API_KEY) {

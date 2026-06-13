@@ -374,7 +374,7 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
 
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions.list });
   const scripts = useQuery({ queryKey: ['scripts'], queryFn: api.scripts.list });
-  const pharmacies = useQuery({ queryKey: ['pharmacies'], queryFn: api.pharmacies.list });
+  const pharmacies = useQuery({ queryKey: ['pharmacies'], queryFn: () => api.pharmacies.list({ limit: 500 }) });
   const anvisaResults = useQuery({
     queryKey: ['anvisa-campaign-search', productSearchQuery],
     queryFn: () => api.anvisa.search({ q: productSearchQuery, limit: 10 }),
@@ -506,10 +506,10 @@ function CreateCampaignForm({ onClose }: { onClose: () => void }) {
               Pharmacies * ({selectedPharmacies.length} selected)
             </label>
             <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-border divide-y divide-border-dim">
-              {pharmacies.data?.length === 0 ? (
+              {pharmacies.data?.data?.length === 0 ? (
                 <p className="text-xs text-text-tertiary px-3 py-2">No pharmacies yet. Add some first.</p>
               ) : (
-                pharmacies.data?.map((ph: Pharmacy) => (
+                pharmacies.data?.data?.map((ph: Pharmacy) => (
                   <label key={ph.id} className="flex items-center gap-2 px-3 py-2 hover:bg-surface-hover cursor-pointer">
                     <input
                       type="checkbox"

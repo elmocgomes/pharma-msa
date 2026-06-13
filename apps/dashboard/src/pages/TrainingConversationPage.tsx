@@ -32,7 +32,7 @@ export function TrainingConversationPage() {
 }
 
 function StartConversation({ campaignId, onStarted }: { campaignId: string; onStarted: (id: string) => void }) {
-  const pharmacies = useQuery({ queryKey: ['pharmacies'], queryFn: api.pharmacies.list });
+  const pharmacies = useQuery({ queryKey: ['pharmacies'], queryFn: () => api.pharmacies.list({ limit: 500 }) });
   const [selectedPharmacy, setSelectedPharmacy] = useState('');
   const conversations = useQuery({ queryKey: ['conversations', campaignId], queryFn: () => api.conversations.list(campaignId) });
 
@@ -53,7 +53,7 @@ function StartConversation({ campaignId, onStarted }: { campaignId: string; onSt
             <select className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
               value={selectedPharmacy} onChange={(e) => setSelectedPharmacy(e.target.value)}>
               <option value="">Select pharmacy...</option>
-              {(pharmacies.data ?? []).map((p) => (
+              {(pharmacies.data?.data ?? []).map((p) => (
                 <option key={p.id} value={p.id}>{p.name} — {p.phoneNumber}</option>
               ))}
             </select>

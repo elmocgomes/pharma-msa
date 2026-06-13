@@ -251,6 +251,57 @@ export function createMigrateRoutes() {
       results.push({ migration: '0014_training_module', status: 'error', error: String(err) });
     }
 
+    // Migration 0015: Enrich pharmacies table (CNPJ data, address, chain, associations, WhatsApp)
+    try {
+      await sql.unsafe(`
+        -- Remove unique constraint on phone_number (many pharmacies share chain phone)
+        ALTER TABLE pharmacies DROP CONSTRAINT IF EXISTS pharmacies_phone_number_unique;
+        DROP INDEX IF EXISTS pharmacies_phone_number_key;
+
+        -- CNPJ data
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS cnpj text UNIQUE;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS matriz_filial text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS razao_social text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS nome_fantasia text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS phone2 text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS email text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS cnae_primario text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS cnae_descricao text;
+
+        -- Address
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS tipo_logradouro text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS logradouro text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS numero text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS complemento text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS bairro text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS cep text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS codigo_municipio integer;
+
+        -- Company info
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS porte text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS natureza_juridica text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS data_atividade text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS data_situacao text;
+
+        -- Enrichment
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS chain_name text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS association_name text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS whatsapp_number text;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS whatsapp_verified boolean DEFAULT false;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS last_scraped_at timestamptz;
+        ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS scrape_source text;
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_pharmacies_cnpj ON pharmacies(cnpj) WHERE cnpj IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_pharmacies_state ON pharmacies(state) WHERE state IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_pharmacies_chain ON pharmacies(chain_name) WHERE chain_name IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_pharmacies_cep ON pharmacies(cep) WHERE cep IS NOT NULL;
+      `);
+      results.push({ migration: '0015_enrich_pharmacies', status: 'ok' });
+    } catch (err) {
+      results.push({ migration: '0015_enrich_pharmacies', status: 'error', error: String(err) });
+    }
+
     await sql.end();
     return c.json({ results });
   });
