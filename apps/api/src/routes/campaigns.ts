@@ -40,6 +40,7 @@ export function createCampaignRoutes(db: Db, redis: ConnectionOptions) {
       name: body.name,
       scriptId: body.scriptId,
       waSessionId: body.waSessionId,
+      mode: body.mode ?? 'auto',
       settings: settingsParsed.data,
     }).returning();
 

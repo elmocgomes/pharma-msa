@@ -13,6 +13,7 @@ export const campaigns = pgTable('campaigns', {
   waSessionId: uuid('wa_session_id').notNull().references(() => waSessions.id),
   campaignGroupId: uuid('campaign_group_id').references(() => campaignGroups.id, { onDelete: 'set null' }),
   targetState: text('target_state'), // Brazilian state (UF) this campaign targets
+  mode: text('mode', { enum: ['auto', 'training'] }).notNull().default('auto'),
   status: text('status', { enum: ['draft', 'running', 'paused', 'completed'] }).notNull().default('draft'),
   settings: jsonb('settings').notNull().$type<CampaignSettings>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

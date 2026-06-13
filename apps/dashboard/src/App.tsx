@@ -9,6 +9,8 @@ import { ConversationDetailPage } from '@/pages/ConversationDetailPage';
 import { PharmaciesPage } from '@/pages/PharmaciesPage';
 import { ProductsPage } from '@/pages/ProductsPage';
 import { PromptsPage } from '@/pages/PromptsPage';
+import { TrainingPage } from '@/pages/TrainingPage';
+import { TrainingConversationPage } from '@/pages/TrainingConversationPage';
 import { Navigate } from 'react-router-dom';
 
 const queryClient = new QueryClient({
@@ -34,6 +36,9 @@ export default function App() {
             <Route path="/pharmacies" element={<PharmaciesPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/prompts" element={<PromptsPage />} />
+            <Route path="/training" element={<TrainingPage />} />
+            <Route path="/training/:campaignId" element={<TrainingConversationPage />} />
+            <Route path="/training/:campaignId/:conversationId" element={<TrainingConversationPage />} />
             <Route path="/anvisa" element={<Navigate to="/products" replace />} />
           </Route>
         </Routes>

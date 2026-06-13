@@ -43,7 +43,7 @@ export const api = {
   campaigns: {
     list: () => request<Campaign[]>('/campaigns'),
     get: (id: string) => request<Campaign>(`/campaigns/${id}`),
-    create: (data: { name: string; scriptId: string; waSessionId: string; pharmacyIds: string[]; productIds?: string[]; anvisaProductIds?: string[]; settings?: Record<string, unknown> }) =>
+    create: (data: { name: string; scriptId: string; waSessionId: string; pharmacyIds: string[]; productIds?: string[]; anvisaProductIds?: string[]; settings?: Record<string, unknown>; mode?: 'auto' | 'training' }) =>
       request<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
     start: (id: string) => request<{ status: string }>(`/campaigns/${id}/start`, { method: 'POST' }),
     pause: (id: string) => request<{ status: string }>(`/campaigns/${id}/pause`, { method: 'POST' }),
@@ -124,6 +124,31 @@ export const api = {
     create: (data: { name: string; scriptId: string; productIds?: string[]; anvisaProductIds?: string[]; targetStates: string[] }) =>
       request<{ group: CampaignGroup; campaigns: Campaign[] }>('/campaign-groups', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) => request<{ status: string }>(`/campaign-groups/${id}`, { method: 'DELETE' }),
+  },
+  training: {
+    campaigns: () => request<Campaign[]>('/training/campaigns'),
+    createConversation: (campaignId: string, pharmacyId: string) =>
+      request<Conversation>(`/training/campaigns/${campaignId}/conversations`, {
+        method: 'POST', body: JSON.stringify({ pharmacyId }),
+      }),
+    getConversation: (id: string) =>
+      request<TrainingConversationDetail>(`/training/conversations/${id}`),
+    sendMessage: (conversationId: string, text: string) =>
+      request<Message>(`/training/conversations/${conversationId}/send`, {
+        method: 'POST', body: JSON.stringify({ text }),
+      }),
+    complete: (conversationId: string) =>
+      request<{ status: string }>(`/training/conversations/${conversationId}/complete`, { method: 'POST' }),
+    replay: (conversationId: string) =>
+      request<{ evaluation: TrainingEvaluation; extraction: Record<string, unknown> }>(
+        `/training/conversations/${conversationId}/replay`, { method: 'POST' },
+      ),
+    getEvaluation: (conversationId: string) =>
+      request<TrainingEvaluation>(`/training/conversations/${conversationId}/evaluation`),
+    saveCorrections: (evaluationId: string, corrections: Record<string, unknown>, notes: string) =>
+      request<TrainingEvaluation>(`/training/evaluations/${evaluationId}`, {
+        method: 'PATCH', body: JSON.stringify({ corrections, notes }),
+      }),
   },
 };
 
@@ -382,4 +407,22 @@ export interface CampaignGroup {
 
 export interface CampaignGroupDetail extends CampaignGroup {
   campaigns: Campaign[];
+}
+
+export interface TrainingConversationDetail {
+  conversation: Conversation;
+  messages: Message[];
+  pharmacy: Pharmacy;
+  session: Session;
+}
+
+export interface TrainingEvaluation {
+  id: string;
+  conversationId: string;
+  extractionResult: Record<string, unknown> | null;
+  adminCorrections: Record<string, unknown> | null;
+  notes: string | null;
+  status: 'pending' | 'evaluated' | 'applied';
+  createdAt: string;
+  updatedAt: string;
 }

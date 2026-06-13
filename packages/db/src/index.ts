@@ -13,6 +13,7 @@ export { extractionResults, productFindings } from './schema/extractions.js';
 export { conversationEvents } from './schema/events.js';
 export { campaignReports } from './schema/reports.js';
 export { agentPrompts, promptVersions } from './schema/prompts.js';
+export { trainingEvaluations } from './schema/training.js';
 
 export { transitionConversation, findActiveConversation, findActiveConversationBySession } from './queries/conversations.js';
 export { computeIdempotencyKey, insertMessageIdempotent, getConversationMessages, getRecentMessages } from './queries/messages.js';

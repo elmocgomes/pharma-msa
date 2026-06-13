@@ -231,6 +231,26 @@ export function createMigrateRoutes() {
       results.push({ migration: '0013_campaign_product_role', status: 'error', error: String(err) });
     }
 
+    // Migration 0014: Training module (campaign mode + training_evaluations table)
+    try {
+      await sql.unsafe(`
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'auto';
+        CREATE TABLE IF NOT EXISTS training_evaluations (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+          extraction_result jsonb,
+          admin_corrections jsonb,
+          notes text,
+          status text NOT NULL DEFAULT 'pending',
+          created_at timestamptz NOT NULL DEFAULT now(),
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+      `);
+      results.push({ migration: '0014_training_module', status: 'ok' });
+    } catch (err) {
+      results.push({ migration: '0014_training_module', status: 'error', error: String(err) });
+    }
+
     await sql.end();
     return c.json({ results });
   });

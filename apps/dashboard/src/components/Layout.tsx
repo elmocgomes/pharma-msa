@@ -9,6 +9,7 @@ import {
   Building2,
   Activity,
   FileText,
+  GraduationCap,
 } from 'lucide-react';
 
 const navigation = [
@@ -19,6 +20,7 @@ const navigation = [
   { name: 'Pharmacies', href: '/pharmacies', icon: Building2 },
   { name: 'Products', href: '/products', icon: Pill },
   { name: 'Prompts', href: '/prompts', icon: FileText },
+  { name: 'Training', href: '/training', icon: GraduationCap },
 ];
 
 export function Layout() {

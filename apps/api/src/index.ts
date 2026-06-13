@@ -25,6 +25,7 @@ import { createReportRoutes } from './routes/reports.js';
 import { createMigrateRoutes } from './routes/migrate.js';
 import { createAnvisaRoutes } from './routes/anvisa.js';
 import { createCampaignGroupRoutes } from './routes/campaign-groups.js';
+import { createTrainingRoutes } from './routes/training.js';
 import { errorHandler } from './middleware/error-handler.js';
 
 // Resolve hostnames to IPs at startup to bypass Docker DNS for long-lived connections
@@ -86,7 +87,7 @@ app.route('/migrate', createMigrateRoutes());
 app.route('/anvisa', createAnvisaRoutes(db));
 app.route('/campaign-groups', createCampaignGroupRoutes(db));
 
-// Prompt chat requires ANTHROPIC_API_KEY
+// AI-powered routes require ANTHROPIC_API_KEY
 if (process.env.ANTHROPIC_API_KEY) {
   const { AnthropicProvider } = await import('@pharma/ai');
   const chatProvider = new AnthropicProvider(
@@ -94,6 +95,9 @@ if (process.env.ANTHROPIC_API_KEY) {
     'claude-sonnet-4-20250514',
   );
   app.route('/prompt-chat', createPromptChatRoutes(db, chatProvider));
+  app.route('/training', createTrainingRoutes(db, waClient, chatProvider));
+} else {
+  app.route('/training', createTrainingRoutes(db, waClient));
 }
 
 // Seed default prompts on startup (idempotent, uses ON CONFLICT DO NOTHING)
