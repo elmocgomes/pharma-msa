@@ -1,6 +1,74 @@
 import { Hono } from 'hono';
-import { eq, ilike, or, sql, count } from 'drizzle-orm';
+import { eq, sql, count } from 'drizzle-orm';
 import { pharmacies, type Db } from '@pharma/db';
+
+const SAFE_COLUMNS: Record<string, string> = {
+  name: 'name',
+  cnpj: 'cnpj',
+  phoneNumber: 'phone_number',
+  whatsappNumber: 'whatsapp_number',
+  city: 'city',
+  state: 'state',
+  bairro: 'bairro',
+  chainName: 'chain_name',
+  associationName: 'association_name',
+  porte: 'porte',
+  nomeFantasia: 'nome_fantasia',
+  razaoSocial: 'razao_social',
+  email: 'email',
+  logradouro: 'logradouro',
+  cep: 'cep',
+  naturezaJuridica: 'natureza_juridica',
+  whatsappVerified: 'whatsapp_verified',
+  createdAt: 'created_at',
+};
+
+type FilterNode = {
+  filterType: string;
+  type?: string;
+  filter?: string;
+  colId?: string;
+  conditions?: FilterNode[];
+};
+
+function buildFilterSql(node: FilterNode): ReturnType<typeof sql> | null {
+  if (!node || !node.filterType) return null;
+
+  if (node.filterType === 'join') {
+    const parts = (node.conditions ?? []).map(buildFilterSql).filter((p): p is NonNullable<typeof p> => p !== null);
+    if (parts.length === 0) return null;
+    if (parts.length === 1) return parts[0]!;
+    const joiner = node.type === 'OR' ? sql` OR ` : sql` AND `;
+    return sql`(${parts.reduce((a, b) => sql`${a}${joiner}${b}`)})`;
+  }
+
+  if (node.filterType === 'text' && node.colId) {
+    const dbCol = SAFE_COLUMNS[node.colId];
+    if (!dbCol) return null;
+    const col = sql.raw(`"${dbCol}"`);
+    const val = node.filter ?? '';
+    switch (node.type) {
+      case 'contains': return sql`${col} ILIKE ${'%' + val + '%'}`;
+      case 'notContains': return sql`${col} NOT ILIKE ${'%' + val + '%'}`;
+      case 'equals': return sql`${col} ILIKE ${val}`;
+      case 'notEqual': return sql`${col} NOT ILIKE ${val}`;
+      case 'startsWith': return sql`${col} ILIKE ${val + '%'}`;
+      case 'endsWith': return sql`${col} ILIKE ${'%' + val}`;
+      case 'blank': return sql`${col} IS NULL OR ${col} = ''`;
+      case 'notBlank': return sql`${col} IS NOT NULL AND ${col} != ''`;
+      default: return sql`${col} ILIKE ${'%' + val + '%'}`;
+    }
+  }
+
+  if (node.filterType === 'boolean' && node.colId) {
+    const dbCol = SAFE_COLUMNS[node.colId];
+    if (!dbCol) return null;
+    const col = sql.raw(`"${dbCol}"`);
+    return node.type === 'true' ? sql`${col} = true` : sql`${col} = false`;
+  }
+
+  return null;
+}
 
 export function createPharmacyRoutes(db: Db) {
   const app = new Hono();
@@ -8,33 +76,41 @@ export function createPharmacyRoutes(db: Db) {
   app.get('/', async (c) => {
     const page = parseInt(c.req.query('page') ?? '1');
     const limit = Math.min(parseInt(c.req.query('limit') ?? '100'), 500);
-    const q = c.req.query('q');
-    const state = c.req.query('state');
-    const chain = c.req.query('chain');
     const offset = (page - 1) * limit;
 
     const conditions = [];
-    if (q) {
-      conditions.push(or(
-        ilike(pharmacies.name, `%${q}%`),
-        ilike(pharmacies.cnpj, `%${q}%`),
-        ilike(pharmacies.razaoSocial, `%${q}%`),
-        ilike(pharmacies.nomeFantasia, `%${q}%`),
-        ilike(pharmacies.phoneNumber, `%${q}%`),
-        ilike(pharmacies.city, `%${q}%`),
-      ));
-    }
-    if (state) conditions.push(eq(pharmacies.state, state));
-    if (chain) conditions.push(eq(pharmacies.chainName, chain));
 
-    const where = conditions.length > 0
-      ? conditions.length === 1 ? conditions[0] : sql`${conditions[0]} AND ${conditions.slice(1).reduce((a, b) => sql`${a} AND ${b}`)}`
-      : undefined;
+    const filterModelRaw = c.req.query('filterModel');
+    if (filterModelRaw) {
+      try {
+        const fm = JSON.parse(filterModelRaw) as FilterNode;
+        const filterSql = buildFilterSql(fm);
+        if (filterSql) conditions.push(filterSql);
+      } catch { /* ignore invalid JSON */ }
+    }
+
+    const where = conditions.length > 0 ? conditions[0] : undefined;
+
+    let orderClause = sql`"name" ASC`;
+    const sortModelRaw = c.req.query('sortModel');
+    if (sortModelRaw) {
+      try {
+        const sm = JSON.parse(sortModelRaw) as { colId: string; sort: string }[];
+        if (sm.length > 0 && sm[0]) {
+          const dbCol = SAFE_COLUMNS[sm[0].colId];
+          if (dbCol) {
+            orderClause = sm[0].sort === 'desc'
+              ? sql.raw(`"${dbCol}" DESC NULLS LAST`)
+              : sql.raw(`"${dbCol}" ASC NULLS LAST`);
+          }
+        }
+      } catch { /* ignore */ }
+    }
 
     const [data, [total]] = await Promise.all([
       where
-        ? db.select().from(pharmacies).where(where).orderBy(pharmacies.name).limit(limit).offset(offset)
-        : db.select().from(pharmacies).orderBy(pharmacies.name).limit(limit).offset(offset),
+        ? db.select().from(pharmacies).where(where).orderBy(orderClause).limit(limit).offset(offset)
+        : db.select().from(pharmacies).orderBy(orderClause).limit(limit).offset(offset),
       where
         ? db.select({ count: count() }).from(pharmacies).where(where)
         : db.select({ count: count() }).from(pharmacies),
