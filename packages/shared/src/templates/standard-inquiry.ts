@@ -73,11 +73,11 @@ export const STANDARD_INQUIRY_TEMPLATE: FlowTree = {
     intent: 'Check if generic version is available and its price',
     rulePhase: 'generic',
     branches: [
-      { category: 'has_generic', description: 'Generic is available, possibly with price', next: 'next_product' },
-      { category: 'no_generic', description: 'No generic available', next: 'next_product' },
+      { category: 'has_generic', description: 'Generic is available, possibly with price', next: 'closing' },
+      { category: 'no_generic', description: 'No generic available', next: 'closing' },
     ],
     timeout_ms: 300_000,
-    timeout_next: 'next_product',
+    timeout_next: 'closing',
     max_retries: 1,
   },
 
@@ -99,11 +99,11 @@ export const STANDARD_INQUIRY_TEMPLATE: FlowTree = {
     intent: 'Check if alternatives or generics with the same active ingredient are available',
     rulePhase: 'alternative',
     branches: [
-      { category: 'has_alternatives', description: 'Alternatives, similars, or generics are available', next: 'next_product' },
-      { category: 'nothing_available', description: 'Nothing similar or alternative available', next: 'next_product' },
+      { category: 'has_alternatives', description: 'Alternatives, similars, or generics are available', next: 'closing' },
+      { category: 'nothing_available', description: 'Nothing similar or alternative available', next: 'closing' },
     ],
     timeout_ms: 300_000,
-    timeout_next: 'next_product',
+    timeout_next: 'closing',
     max_retries: 1,
   },
 
@@ -126,25 +126,6 @@ export const STANDARD_INQUIRY_TEMPLATE: FlowTree = {
       'Oi! Tudo bem? Conseguiram ver sobre o {product_name}?',
     ],
     delay_ms: 1000,
-    next: 'wait_availability',
-  },
-
-  next_product: {
-    type: 'next_product',
-    id: 'next_product',
-    has_more_next: 'transition_product',
-    done_next: 'closing',
-  },
-
-  transition_product: {
-    type: 'send',
-    id: 'transition_product',
-    message: 'Aproveitar e perguntar, vocês têm {product_name} também?',
-    variants: [
-      'E {product_name}, vocês têm?',
-      'Ah, e sobre {product_name}, tem aí?',
-    ],
-    delay_ms: 2500,
     next: 'wait_availability',
   },
 

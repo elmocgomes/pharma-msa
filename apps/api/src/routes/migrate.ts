@@ -189,6 +189,48 @@ export function createMigrateRoutes() {
       results.push({ migration: '0012_apresentacao_fields', status: 'error', error: String(err) });
     }
 
+    // Migration 0013: campaign_products role (survey vs competitor) + fix script trees
+    try {
+      await sql.unsafe(`
+        ALTER TABLE campaign_products ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'survey';
+        UPDATE campaign_products SET role = 'competitor'
+          WHERE id NOT IN (
+            SELECT DISTINCT ON (campaign_id) id
+            FROM campaign_products
+            ORDER BY campaign_id, id ASC
+          );
+      `);
+      // Patch existing script trees: rewire branches that go to next_product → closing
+      const scriptRows = await sql`SELECT id, tree FROM scripts WHERE tree::text LIKE '%next_product%'`;
+      for (const row of scriptRows) {
+        const tree = typeof row.tree === 'string' ? JSON.parse(row.tree) : row.tree;
+        let changed = false;
+        for (const [, node] of Object.entries(tree) as [string, Record<string, unknown>][]) {
+          if (node.type === 'classify' && Array.isArray(node.branches)) {
+            for (const branch of node.branches as Record<string, unknown>[]) {
+              if (branch.next === 'next_product') {
+                branch.next = 'closing';
+                changed = true;
+              }
+            }
+            if (node.timeout_next === 'next_product') {
+              node.timeout_next = 'closing';
+              changed = true;
+            }
+          }
+        }
+        // Remove next_product and transition_product nodes
+        if (tree.next_product) { delete tree.next_product; changed = true; }
+        if (tree.transition_product) { delete tree.transition_product; changed = true; }
+        if (changed) {
+          await sql`UPDATE scripts SET tree = ${JSON.stringify(tree)}::jsonb WHERE id = ${row.id}`;
+        }
+      }
+      results.push({ migration: '0013_campaign_product_role', status: 'ok' });
+    } catch (err) {
+      results.push({ migration: '0013_campaign_product_role', status: 'error', error: String(err) });
+    }
+
     await sql.end();
     return c.json({ results });
   });

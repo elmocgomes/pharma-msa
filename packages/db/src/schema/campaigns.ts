@@ -32,6 +32,7 @@ export const campaignProducts = pgTable('campaign_products', {
   id: uuid('id').primaryKey().defaultRandom(),
   campaignId: uuid('campaign_id').notNull().references(() => campaigns.id),
   productId: uuid('product_id').notNull().references(() => products.id),
+  role: text('role', { enum: ['survey', 'competitor'] }).notNull().default('survey'),
 }, (t) => [
   uniqueIndex('campaign_product_unique').on(t.campaignId, t.productId),
 ]);

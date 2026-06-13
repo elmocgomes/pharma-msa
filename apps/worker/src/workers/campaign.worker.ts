@@ -33,18 +33,24 @@ export function createCampaignWorker(db: Db, redis: ConnectionOptions) {
           ),
         );
 
-      const productList = await db
+      const surveyProducts = await db
         .select({ product: products })
         .from(campaignProducts)
         .innerJoin(products, eq(campaignProducts.productId, products.id))
-        .where(eq(campaignProducts.campaignId, campaignId));
+        .where(and(eq(campaignProducts.campaignId, campaignId), eq(campaignProducts.role, 'survey')));
 
-      if (productList.length === 0) {
-        console.warn(`[CAMPAIGN] No products in campaign ${campaignId}`);
+      if (surveyProducts.length === 0) {
+        console.warn(`[CAMPAIGN] No survey products in campaign ${campaignId}`);
         return;
       }
 
-      const firstProduct = productList[0]!.product;
+      const competitorProducts = await db
+        .select({ product: products })
+        .from(campaignProducts)
+        .innerJoin(products, eq(campaignProducts.productId, products.id))
+        .where(and(eq(campaignProducts.campaignId, campaignId), eq(campaignProducts.role, 'competitor')));
+
+      const firstProduct = surveyProducts[0]!.product;
       const settings = campaign.settings as { delay_range_ms: [number, number]; concurrent_limit: number };
       const [minDelay, maxDelay] = settings.delay_range_ms;
       let spawned = 0;
@@ -52,11 +58,16 @@ export function createCampaignWorker(db: Db, redis: ConnectionOptions) {
       for (const { cp, pharmacy } of pendingPharmacies) {
         if (spawned >= settings.concurrent_limit) break;
 
+        const competitorNames = competitorProducts
+          .map((cp) => formatProductForInquiry(cp.product))
+          .join(', ');
+
         const variables: Record<string, string> = {
           product_name: formatProductForInquiry(firstProduct),
           active_ingredient: firstProduct.activeIngredient ?? '',
           brand: firstProduct.brand ?? '',
           dosage: firstProduct.dosage ?? '',
+          competitors: competitorNames,
         };
 
         const [conv] = await db.insert(conversations).values({

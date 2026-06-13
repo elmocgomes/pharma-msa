@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { Queue } from 'bullmq';
 import {
   type Db, scripts, conversations, waSessions,
@@ -170,7 +170,7 @@ export class ScriptRunner {
       .select({ product: products })
       .from(campaignProducts)
       .innerJoin(products, eq(campaignProducts.productId, products.id))
-      .where(eq(campaignProducts.campaignId, conv.campaignId));
+      .where(and(eq(campaignProducts.campaignId, conv.campaignId), eq(campaignProducts.role, 'survey')));
 
     const nextIndex = conv.productIndex + 1;
     const nextProduct = campaignProductList[nextIndex];

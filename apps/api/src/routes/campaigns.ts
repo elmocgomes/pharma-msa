@@ -94,9 +94,10 @@ export function createCampaignRoutes(db: Db, redis: ConnectionOptions) {
 
     if (allProductIds.length > 0) {
       await db.insert(campaignProducts).values(
-        allProductIds.map((productId: string) => ({
+        allProductIds.map((productId: string, i: number) => ({
           campaignId: campaign!.id,
           productId,
+          role: i === 0 ? 'survey' as const : 'competitor' as const,
         })),
       );
     }
