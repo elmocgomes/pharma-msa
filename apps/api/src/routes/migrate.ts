@@ -255,8 +255,8 @@ export function createMigrateRoutes() {
     try {
       await sql.unsafe(`
         -- Remove unique constraint on phone_number (many pharmacies share chain phone)
+        ALTER TABLE pharmacies DROP CONSTRAINT IF EXISTS pharmacies_phone_number_key;
         ALTER TABLE pharmacies DROP CONSTRAINT IF EXISTS pharmacies_phone_number_unique;
-        DROP INDEX IF EXISTS pharmacies_phone_number_key;
 
         -- CNPJ data
         ALTER TABLE pharmacies ADD COLUMN IF NOT EXISTS cnpj text UNIQUE;
