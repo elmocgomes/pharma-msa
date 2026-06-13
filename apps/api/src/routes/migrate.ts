@@ -176,6 +176,19 @@ export function createMigrateRoutes() {
       results.push({ migration: '0011_anvisa_state_campaigns', status: 'error', error: String(err) });
     }
 
+    // Migration 0012: Parsed apresentacao fields (dosagem, forma, quantidade)
+    try {
+      await sql.unsafe(`
+        ALTER TABLE anvisa_products ADD COLUMN IF NOT EXISTS dosagem text;
+        ALTER TABLE anvisa_products ADD COLUMN IF NOT EXISTS forma text;
+        ALTER TABLE anvisa_products ADD COLUMN IF NOT EXISTS quantidade text;
+        CREATE INDEX IF NOT EXISTS idx_anvisa_dosagem ON anvisa_products(dosagem) WHERE dosagem IS NOT NULL;
+      `);
+      results.push({ migration: '0012_apresentacao_fields', status: 'ok' });
+    } catch (err) {
+      results.push({ migration: '0012_apresentacao_fields', status: 'error', error: String(err) });
+    }
+
     await sql.end();
     return c.json({ results });
   });
