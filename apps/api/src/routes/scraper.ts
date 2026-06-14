@@ -137,6 +137,238 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     return c.json({ updated });
   });
 
+  // Scrape WhatsApp numbers from Pague Menos store locator API
+  app.post('/scrape-pague-menos', async (c) => {
+    type PagueStore = {
+      celular_loja: string | null;
+      ddd: string | null;
+      fixo_loja: string | null;
+      cep: string | null;
+      cidade: string | null;
+      uf: string | null;
+      nome_loja: string | null;
+      endereco: string | null;
+      bairro: string | null;
+      bandeira: string | null;
+      status: string | null;
+      cod_loja: string | null;
+    };
+
+    // Get distinct city+state combos from our DB for Pague Menos pharmacies
+    const cityStates = await db.selectDistinct({
+      city: pharmacies.city,
+      state: pharmacies.state,
+    }).from(pharmacies)
+      .where(sql`${pharmacies.chainName} IN ('Pague Menos', 'Extrafarma') AND ${pharmacies.city} IS NOT NULL AND ${pharmacies.state} IS NOT NULL`);
+
+    const allStores = new Map<string, PagueStore>();
+
+    for (const { city, state } of cityStates) {
+      if (!city || !state) continue;
+      try {
+        const addr = `${city} - ${state}, Brasil`;
+        const url = `https://www.paguemenos.com.br/_v/get-store-base-by-address/${encodeURIComponent(addr)}`;
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        });
+        if (res.ok) {
+          const stores = await res.json() as PagueStore[];
+          if (Array.isArray(stores)) {
+            for (const s of stores) {
+              if (s.status === 'ATIVA' && s.cod_loja) {
+                allStores.set(s.cod_loja, s);
+              }
+            }
+          }
+        }
+      } catch {
+        // Skip failed cities
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    const uniqueStores = [...allStores.values()];
+    let matched = 0;
+    let updated = 0;
+    let noPhone = 0;
+
+    for (const store of uniqueStores) {
+      if (!store.celular_loja || !store.ddd) {
+        noPhone++;
+        continue;
+      }
+
+      const whatsappNumber = `55${store.ddd}${store.celular_loja}`;
+      const normalizedCep = (store.cep ?? '').replace(/\D/g, '');
+
+      let matchedIds: { id: string }[] = [];
+      if (normalizedCep.length >= 7) {
+        matchedIds = await db.select({ id: pharmacies.id })
+          .from(pharmacies)
+          .where(and(
+            sql`REPLACE(${pharmacies.cep}, '-', '') = ${normalizedCep}`,
+            sql`(${pharmacies.chainName} IN ('Pague Menos', 'Extrafarma') OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%PAGUE MENOS%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%EXTRAFARMA%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%EMPREENDIMENTOS PAGUE MENOS%')`,
+          ))
+          .limit(3);
+      }
+
+      if (matchedIds.length === 0 && store.cidade && store.uf) {
+        matchedIds = await db.select({ id: pharmacies.id })
+          .from(pharmacies)
+          .where(and(
+            sql`UPPER(${pharmacies.city}) = ${store.cidade.toUpperCase()}`,
+            eq(pharmacies.state, store.uf),
+            sql`(${pharmacies.chainName} IN ('Pague Menos', 'Extrafarma') OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%PAGUE MENOS%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%EXTRAFARMA%')`,
+            sql`${pharmacies.whatsappNumber} IS NULL`,
+          ))
+          .limit(1);
+      }
+
+      if (matchedIds.length > 0) {
+        matched += matchedIds.length;
+        for (const { id } of matchedIds) {
+          await db.update(pharmacies).set({
+            whatsappNumber,
+            whatsappVerified: true,
+            lastScrapedAt: new Date(),
+            scrapeSource: 'pague-menos-website',
+            updatedAt: new Date(),
+          }).where(eq(pharmacies.id, id));
+          updated++;
+        }
+      }
+    }
+
+    return c.json({
+      storesFetched: uniqueStores.length,
+      withPhone: uniqueStores.length - noPhone,
+      noPhone,
+      matched,
+      updated,
+    });
+  });
+
+  // Scrape WhatsApp numbers from Raia Drogasil store locator
+  // Uses phone numbers from their Next.js store locator pages
+  app.post('/scrape-raia-drogasil', async (c) => {
+    const STATE_SEARCH: Record<string, string> = {
+      SP: 'sao+paulo', RJ: 'rio+de+janeiro', PR: 'parana', RS: 'rio+grande+do+sul',
+      SC: 'santa+catarina', MG: 'minas+gerais', BA: 'bahia', CE: 'ceara',
+      GO: 'goias', MT: 'mato+grosso', MS: 'mato+grosso+do+sul', PE: 'pernambuco',
+      ES: 'espirito+santo', DF: 'distrito+federal', PA: 'para', AM: 'amazonas',
+      MA: 'maranhao', PB: 'paraiba', RN: 'rio+grande+do+norte', PI: 'piaui',
+      SE: 'sergipe', AL: 'alagoas', TO: 'tocantins', RO: 'rondonia',
+      AC: 'acre', AP: 'amapa', RR: 'roraima',
+    };
+
+    type RdStore = {
+      telephone: string | null;
+      telephoneAreaCode: number | null;
+      fantasyName: string | null;
+      storeName: string | null;
+      address: {
+        regionId: string;
+        cityName: string;
+        neighborhood: string;
+        street: string;
+        number: string;
+        postcode: string;
+      };
+    };
+
+    const allStores: RdStore[] = [];
+    const brands = ['drogaraia.com.br', 'drogasil.com.br'];
+
+    for (const brand of brands) {
+      for (const [, stateSlug] of Object.entries(STATE_SEARCH)) {
+        let page = 1;
+        let totalPages = 1;
+
+        while (page <= totalPages && page <= 100) {
+          try {
+            const url = `https://www.${brand}/nossas-lojas?estado=${stateSlug}&page=${page}`;
+            const res = await fetch(url, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml',
+                'Accept-Language': 'pt-BR,pt;q=0.9',
+              },
+            });
+
+            if (!res.ok) break;
+
+            const html = await res.text();
+            const ndMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/);
+            if (!ndMatch) break;
+
+            const nextData = JSON.parse(ndMatch[1]!);
+            const storesData = nextData?.props?.pageProps?.storesData;
+            if (!storesData?.items?.length) break;
+
+            allStores.push(...storesData.items);
+            totalPages = storesData.page_info?.total_pages ?? 1;
+            page++;
+          } catch {
+            break;
+          }
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+    }
+
+    // Deduplicate by postcode + storeName
+    const seen = new Set<string>();
+    const uniqueStores = allStores.filter(s => {
+      const key = `${s.address?.postcode}-${s.fantasyName}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    let matched = 0;
+    let updated = 0;
+
+    for (const store of uniqueStores) {
+      if (!store.telephone || !store.telephoneAreaCode) continue;
+
+      const phone = `55${store.telephoneAreaCode}${store.telephone.trim()}`;
+      const normalizedCep = (store.address?.postcode ?? '').replace(/\D/g, '');
+
+      let matchedIds: { id: string }[] = [];
+      if (normalizedCep.length >= 7) {
+        matchedIds = await db.select({ id: pharmacies.id })
+          .from(pharmacies)
+          .where(and(
+            sql`REPLACE(${pharmacies.cep}, '-', '') = ${normalizedCep}`,
+            sql`${pharmacies.chainName} = 'Raia Drogasil' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%RAIA%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DROGASIL%'`,
+          ))
+          .limit(3);
+      }
+
+      if (matchedIds.length > 0) {
+        matched += matchedIds.length;
+        for (const { id } of matchedIds) {
+          // Store phone (not WhatsApp) — RD doesn't expose WhatsApp numbers
+          // But update phone2 if we got a new number and mark as scraped
+          await db.update(pharmacies).set({
+            phone2: phone,
+            lastScrapedAt: new Date(),
+            scrapeSource: 'raia-drogasil-website',
+            updatedAt: new Date(),
+          }).where(eq(pharmacies.id, id));
+          updated++;
+        }
+      }
+    }
+
+    return c.json({
+      storesFetched: uniqueStores.length,
+      matched,
+      updated,
+      note: 'Raia Drogasil does not expose WhatsApp numbers. Phone numbers saved to phone2 field.',
+    });
+  });
+
   // Get scraping stats
   app.get('/stats', async (c) => {
     const [stats] = await db.select({

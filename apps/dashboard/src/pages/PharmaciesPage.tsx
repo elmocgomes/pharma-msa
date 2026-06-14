@@ -150,7 +150,6 @@ export function PharmaciesPage() {
           }}
           statusBar={{
             statusPanels: [
-              { statusPanel: 'agTotalAndFilteredRowCountComponent', align: 'left' },
               { statusPanel: 'agSelectedRowCountComponent', align: 'left' },
             ],
           }}
