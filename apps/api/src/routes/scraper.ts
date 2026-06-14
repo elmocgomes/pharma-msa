@@ -530,150 +530,157 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     return c.json({ summary: panvelPharmacies[0], matchedSample: sampleWithWhatsapp, unmatchedSample: sampleWithout });
   });
 
-  // AI-powered address matching for unmatched Panvel pharmacies
+  // Address matching for unmatched Panvel pharmacies
+  // Phase 1: deterministic (normalized street+number). Phase 2: AI for remainder.
   app.post('/match-panvel-addresses', async (c) => {
     type PanvelStore = {
-      id: number;
-      cnpj: string;
-      name: string;
-      cellPhone: string | null;
-      street: string;
-      number: number | string;
-      district: string;
-      zipCode: string;
-      city: string;
-      state: string;
+      id: number; cnpj: string; name: string; cellPhone: string | null;
+      street: string; number: number | string; district: string;
+      zipCode: string; city: string; state: string;
     };
 
-    const { stores, apiKey } = await c.req.json() as { stores: PanvelStore[]; apiKey: string };
+    const { stores, apiKey } = await c.req.json() as { stores: PanvelStore[]; apiKey?: string };
     if (!Array.isArray(stores)) return c.json({ error: 'stores array required' }, 400);
-    if (!apiKey) return c.json({ error: 'apiKey required' }, 400);
 
-    // Get all unmatched DB Panvel pharmacies with addresses
+    const normalize = (s: string) =>
+      s.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/\b(RUA|R|AVENIDA|AV|ALAMEDA|AL|TRAVESSA|TV|RODOVIA|ROD|PRACA|PC|ESTRADA|EST|LARGO|LG|DOUTOR|DR|PROFESSOR|PROF|PRESIDENTE|PRES|GENERAL|GEN|MARECHAL|MAL|ENGENHEIRO|ENG|SENADOR|SEN|DEPUTADO|DEP|CORONEL|CEL|CAPITAO|CAP|TENENTE|TEN|VEREADOR|VER|GOVERNADOR|GOV|PREFEITO|PREF|SANTO|STO|SANTA|STA|SAO|S|NOSSA SENHORA|NS|DOM)\b\.?\s*/g, '')
+        .replace(/[^A-Z0-9]/g, '');
+
+    // Get unmatched DB Panvel pharmacies
     const unmatched = await db.select({
-      id: pharmacies.id,
-      cnpj: pharmacies.cnpj,
-      logradouro: pharmacies.logradouro,
-      numero: pharmacies.numero,
-      bairro: pharmacies.bairro,
-      cep: pharmacies.cep,
-      city: pharmacies.city,
-      state: pharmacies.state,
+      id: pharmacies.id, cnpj: pharmacies.cnpj,
+      logradouro: pharmacies.logradouro, numero: pharmacies.numero,
+      bairro: pharmacies.bairro, cep: pharmacies.cep,
+      city: pharmacies.city, state: pharmacies.state,
       tipoLogradouro: pharmacies.tipoLogradouro,
     }).from(pharmacies)
       .where(sql`(chain_name = 'Panvel' OR UPPER(COALESCE(razao_social, '')) LIKE '%PANVEL%' OR UPPER(COALESCE(razao_social, '')) LIKE '%DIMED%') AND whatsapp_number IS NULL`);
 
-    // Filter Panvel stores that have phones and weren't matched by CNPJ
+    // Filter already-matched Panvel stores
     const matchedCnpjs = new Set(
       (await db.select({ cnpj: pharmacies.cnpj }).from(pharmacies)
-        .where(sql`scrape_source = 'panvel-website' AND whatsapp_number IS NOT NULL`))
+        .where(sql`scrape_source IN ('panvel-website','panvel-website-ai') AND whatsapp_number IS NOT NULL`))
         .map(r => r.cnpj?.replace(/\D/g, ''))
     );
     const unmatchedStores = stores.filter(s => s.cellPhone && !matchedCnpjs.has(s.cnpj));
 
-    // Group both sides by city+state
+    // Group by city+state
     const dbByCity: Record<string, typeof unmatched> = {};
-    for (const p of unmatched) {
-      const key = `${p.city?.toUpperCase()}|${p.state}`;
-      (dbByCity[key] ??= []).push(p);
-    }
-
+    for (const p of unmatched) { const k = `${p.city?.toUpperCase()}|${p.state}`; (dbByCity[k] ??= []).push(p); }
     const storesByCity: Record<string, PanvelStore[]> = {};
-    for (const s of unmatchedStores) {
-      const key = `${s.city.toUpperCase()}|${s.state}`;
-      (storesByCity[key] ??= []).push(s);
-    }
+    for (const s of unmatchedStores) { const k = `${s.city.toUpperCase()}|${s.state}`; (storesByCity[k] ??= []).push(s); }
 
-    let totalMatched = 0;
-    let totalUpdated = 0;
-    let citiesProcessed = 0;
-    const errors: string[] = [];
+    let deterministicMatched = 0;
+    let aiMatched = 0;
+    const aiRemainder: { cityKey: string; dbItems: typeof unmatched; storeItems: PanvelStore[] }[] = [];
 
-    // For each city that has both unmatched DB pharmacies and unmatched Panvel stores
+    const applyMatch = async (dbId: string, phone: string, source: string) => {
+      const wa = phone.replace(/\D/g, '');
+      await db.update(pharmacies).set({
+        whatsappNumber: wa.startsWith('55') ? wa : `55${wa}`,
+        whatsappVerified: true, lastScrapedAt: new Date(),
+        scrapeSource: source, updatedAt: new Date(),
+      }).where(eq(pharmacies.id, dbId));
+    };
+
+    // Phase 1: deterministic — normalized street + number
     for (const cityKey of Object.keys(dbByCity)) {
       const cityStores = storesByCity[cityKey];
-      if (!cityStores || cityStores.length === 0) continue;
-      const cityPharmacies = dbByCity[cityKey]!;
+      if (!cityStores?.length) continue;
+      const cityDb = dbByCity[cityKey]!;
 
-      citiesProcessed++;
+      const storeIndex = new Map<string, PanvelStore[]>();
+      for (const s of cityStores) {
+        const key = `${normalize(s.street)}|${String(s.number).replace(/\D/g, '')}`;
+        (storeIndex.get(key) ?? (storeIndex.set(key, []), storeIndex.get(key)!)).push(s);
+      }
 
-      // Build prompt for AI matching
-      const dbList = cityPharmacies.map((p, i) =>
-        `DB${i}: ${[p.tipoLogradouro, p.logradouro].filter(Boolean).join(' ')}, ${p.numero || 'S/N'}, ${p.bairro || ''}, CEP ${p.cep || '?'}`
-      ).join('\n');
-
-      const storeList = cityStores.map((s, i) =>
-        `WEB${i}: ${s.street}, ${s.number || 'S/N'}, ${s.district || ''}, CEP ${s.zipCode || '?'} (${s.name})`
-      ).join('\n');
-
-      const prompt = `Match pharmacy addresses from two lists in ${cityKey.replace('|', ', ')}.
-These are all Panvel/DIMED pharmacies. Match by address similarity (street name + number).
-Abbreviations are common: R = Rua, AV = Avenida, AL = Alameda, ROD = Rodovia, etc.
-
-DATABASE pharmacies (need WhatsApp):
-${dbList}
-
-WEBSITE pharmacies (have WhatsApp):
-${storeList}
-
-Return ONLY a JSON array of matches: [{"db": 0, "web": 2}, ...] where values are the indices.
-Only include confident matches (same street and number). Return [] if no matches.
-JSON only, no explanation.`;
-
-      try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 1024,
-            temperature: 0,
-            messages: [{ role: 'user', content: prompt }],
-          }),
-        });
-
-        const result = await response.json() as { content?: { text?: string }[] };
-        const text = result.content?.[0]?.text || '[]';
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) continue;
-
-        const matches: { db: number; web: number }[] = JSON.parse(jsonMatch[0]);
-
-        for (const match of matches) {
-          const dbPharmacy = cityPharmacies[match.db];
-          const store = cityStores[match.web];
-          if (!dbPharmacy || !store || !store.cellPhone) continue;
-
-          const phone = store.cellPhone.replace(/\D/g, '');
-          const whatsappNumber = phone.startsWith('55') ? phone : `55${phone}`;
-
-          await db.update(pharmacies).set({
-            whatsappNumber,
-            whatsappVerified: true,
-            lastScrapedAt: new Date(),
-            scrapeSource: 'panvel-website-ai',
-            updatedAt: new Date(),
-          }).where(eq(pharmacies.id, dbPharmacy.id));
-
-          totalMatched++;
-          totalUpdated++;
+      const remainDb: typeof unmatched = [];
+      for (const p of cityDb) {
+        const key = `${normalize(p.logradouro || '')}|${(p.numero || '').replace(/\D/g, '')}`;
+        const matched = storeIndex.get(key);
+        if (matched && matched.length === 1 && matched[0].cellPhone) {
+          await applyMatch(p.id, matched[0].cellPhone, 'panvel-website-addr');
+          deterministicMatched++;
+        } else {
+          remainDb.push(p);
         }
-      } catch (err) {
-        errors.push(`${cityKey}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      if (remainDb.length > 0) {
+        const remainStores = cityStores.filter(s => s.cellPhone);
+        if (remainStores.length > 0) aiRemainder.push({ cityKey, dbItems: remainDb, storeItems: remainStores });
+      }
+    }
+
+    // Phase 2: AI for remainder (only if apiKey provided)
+    const errors: string[] = [];
+    if (apiKey && aiRemainder.length > 0) {
+      // Batch small cities together (max ~40 lines per prompt)
+      const batches: typeof aiRemainder[] = [[]];
+      let batchLines = 0;
+      for (const item of aiRemainder) {
+        const lines = item.dbItems.length + item.storeItems.length;
+        if (batchLines + lines > 40 && batches[batches.length - 1].length > 0) {
+          batches.push([]);
+          batchLines = 0;
+        }
+        batches[batches.length - 1].push(item);
+        batchLines += lines;
+      }
+
+      for (const batch of batches) {
+        let prompt = 'Match Panvel pharmacy addresses. Return JSON array: [{"db":"ID","web":"ID"},...].\nOnly confident matches (same street+number). JSON only.\n\n';
+        const dbMap = new Map<string, (typeof unmatched)[0]>();
+        const storeMap = new Map<string, PanvelStore>();
+
+        for (const { cityKey, dbItems, storeItems } of batch) {
+          prompt += `--- ${cityKey.replace('|', ', ')} ---\n`;
+          for (const p of dbItems) {
+            const id = p.id.slice(0, 8);
+            dbMap.set(id, p);
+            prompt += `DB:${id} ${[p.tipoLogradouro, p.logradouro].filter(Boolean).join(' ')}, ${p.numero || 'S/N'}\n`;
+          }
+          for (const s of storeItems) {
+            const id = String(s.id);
+            storeMap.set(id, s);
+            prompt += `WEB:${id} ${s.street}, ${s.number || 'S/N'}\n`;
+          }
+        }
+
+        try {
+          const resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, temperature: 0, messages: [{ role: 'user', content: prompt }] }),
+          });
+          const result = await resp.json() as { content?: { text?: string }[] };
+          const text = result.content?.[0]?.text || '[]';
+          const jsonMatch = text.match(/\[[\s\S]*\]/);
+          if (!jsonMatch) continue;
+          const matches: { db: string; web: string }[] = JSON.parse(jsonMatch[0]);
+
+          for (const m of matches) {
+            const dbP = dbMap.get(m.db);
+            const store = storeMap.get(m.web);
+            if (!dbP || !store?.cellPhone) continue;
+            await applyMatch(dbP.id, store.cellPhone, 'panvel-website-ai');
+            aiMatched++;
+          }
+        } catch (err) {
+          errors.push(err instanceof Error ? err.message : String(err));
+        }
       }
     }
 
     return c.json({
-      unmatchedDbPharmacies: unmatched.length,
-      unmatchedWebStores: unmatchedStores.length,
-      citiesWithBothSides: Object.keys(dbByCity).filter(k => storesByCity[k]?.length).length,
-      citiesProcessed,
-      totalMatched,
-      totalUpdated,
+      unmatchedDb: unmatched.length,
+      unmatchedStores: unmatchedStores.length,
+      deterministicMatched,
+      aiMatched,
+      aiCitiesRemaining: aiRemainder.length,
+      aiBatches: apiKey ? Math.ceil(aiRemainder.length / 5) : 0,
       errors: errors.length > 0 ? errors : undefined,
     });
   });
