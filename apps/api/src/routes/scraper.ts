@@ -600,8 +600,8 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
       for (const p of cityDb) {
         const key = `${normalize(p.logradouro || '')}|${(p.numero || '').replace(/\D/g, '')}`;
         const matched = storeIndex.get(key);
-        if (matched && matched.length === 1 && matched[0].cellPhone) {
-          await applyMatch(p.id, matched[0].cellPhone, 'panvel-website-addr');
+        if (matched && matched.length === 1 && matched[0]!.cellPhone) {
+          await applyMatch(p.id, matched[0]!.cellPhone!, 'panvel-website-addr');
           deterministicMatched++;
         } else {
           remainDb.push(p);
@@ -622,11 +622,11 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
       let batchLines = 0;
       for (const item of aiRemainder) {
         const lines = item.dbItems.length + item.storeItems.length;
-        if (batchLines + lines > 40 && batches[batches.length - 1].length > 0) {
+        if (batchLines + lines > 40 && batches[batches.length - 1]!.length > 0) {
           batches.push([]);
           batchLines = 0;
         }
-        batches[batches.length - 1].push(item);
+        batches[batches.length - 1]!.push(item);
         batchLines += lines;
       }
 
