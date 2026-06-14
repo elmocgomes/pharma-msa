@@ -369,6 +369,94 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     });
   });
 
+  // Import pre-fetched Panvel store data and match to DB
+  // Panvel API is WAF-protected, so data is fetched client-side and POSTed here
+  app.post('/import-panvel', async (c) => {
+    type PanvelStore = {
+      id: number;
+      cnpj: string;
+      name: string;
+      cellPhone: string | null;
+      zipCode: string;
+      city: string;
+      state: string;
+    };
+
+    const { stores } = await c.req.json() as { stores: PanvelStore[] };
+    if (!Array.isArray(stores)) return c.json({ error: 'stores array required' }, 400);
+
+    let matched = 0;
+    let updated = 0;
+    let noPhone = 0;
+
+    for (const store of stores) {
+      if (!store.cellPhone) { noPhone++; continue; }
+
+      const phone = store.cellPhone.replace(/\D/g, '');
+      const whatsappNumber = phone.startsWith('55') ? phone : `55${phone}`;
+      const normalizedCep = store.zipCode.replace(/\D/g, '');
+
+      let matchedIds: { id: string }[] = [];
+
+      // Match by CNPJ first (most reliable)
+      if (store.cnpj) {
+        matchedIds = await db.select({ id: pharmacies.id })
+          .from(pharmacies)
+          .where(and(
+            sql`REPLACE(REPLACE(${pharmacies.cnpj}, '.', ''), '/', '') = REPLACE(REPLACE(${store.cnpj}, '.', ''), '/', '')`,
+            sql`${pharmacies.chainName} = 'Panvel' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%PANVEL%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DIMED%'`,
+          ))
+          .limit(3);
+      }
+
+      // Fallback: match by CEP
+      if (matchedIds.length === 0 && normalizedCep.length >= 7) {
+        matchedIds = await db.select({ id: pharmacies.id })
+          .from(pharmacies)
+          .where(and(
+            sql`REPLACE(${pharmacies.cep}, '-', '') = ${normalizedCep}`,
+            sql`${pharmacies.chainName} = 'Panvel' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%PANVEL%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DIMED%'`,
+          ))
+          .limit(3);
+      }
+
+      // Fallback: match by city+state+chain
+      if (matchedIds.length === 0 && store.city && store.state) {
+        matchedIds = await db.select({ id: pharmacies.id })
+          .from(pharmacies)
+          .where(and(
+            sql`UPPER(${pharmacies.city}) = ${store.city.toUpperCase()}`,
+            eq(pharmacies.state, store.state),
+            sql`${pharmacies.chainName} = 'Panvel' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%PANVEL%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DIMED%'`,
+            sql`${pharmacies.whatsappNumber} IS NULL`,
+          ))
+          .limit(1);
+      }
+
+      if (matchedIds.length > 0) {
+        matched += matchedIds.length;
+        for (const { id } of matchedIds) {
+          await db.update(pharmacies).set({
+            whatsappNumber: whatsappNumber,
+            whatsappVerified: true,
+            lastScrapedAt: new Date(),
+            scrapeSource: 'panvel-website',
+            updatedAt: new Date(),
+          }).where(eq(pharmacies.id, id));
+          updated++;
+        }
+      }
+    }
+
+    return c.json({
+      storesReceived: stores.length,
+      withPhone: stores.length - noPhone,
+      noPhone,
+      matched,
+      updated,
+    });
+  });
+
   // Get scraping stats
   app.get('/stats', async (c) => {
     const [stats] = await db.select({
