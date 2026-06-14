@@ -869,6 +869,125 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     });
   });
 
+  // Import Farmarcas stores — upsert by CEP+name, set whatsapp directly
+  app.post('/import-farmarcas', async (c) => {
+    type FarmarcasStore = {
+      nome: string;
+      whatsapp: string | null;
+      delivery: string | null;
+      telefone: string | null;
+      telefone_secundario: string | null;
+      cep: string;
+      endereco: string;
+      numero: string;
+      bairro: string;
+      cidade: { nome: string; estado: { uf: string; nome: string } };
+      rede: { rede: string };
+      horario_semana: string;
+      horario_sabado: string;
+      horario_domingo: string;
+    };
+
+    const { stores } = await c.req.json() as { stores: FarmarcasStore[] };
+    if (!Array.isArray(stores)) return c.json({ error: 'stores array required' }, 400);
+
+    const normalizePhone = (raw: string | null): string | null => {
+      if (!raw) return null;
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length < 10) return null;
+      return digits.startsWith('55') ? digits : `55${digits}`;
+    };
+
+    const brandNames: Record<string, string> = {
+      'ultra-popular': 'Ultra Popular',
+      'maxi-popular': 'Maxi Popular',
+      'mega-popular': 'Mega Popular',
+      'ac-farma': 'AC Farma',
+      'farmavale': 'Farmavale',
+      'maisfarma': 'Maisfarma',
+      'maestra': 'Drogarias Maestra',
+      'bigfort': 'Bigfort',
+      'farma100': 'Farma100',
+      'super-popular': 'Super Popular',
+      'entrefarma': 'Entrefarma',
+    };
+
+    let matched = 0;
+    let created = 0;
+    let skipped = 0;
+    let updated = 0;
+
+    for (const store of stores) {
+      const wa = normalizePhone(store.whatsapp);
+      const phone = normalizePhone(store.telefone) ?? normalizePhone(store.delivery) ?? wa;
+      if (!phone) { skipped++; continue; }
+
+      const normalizedCep = (store.cep ?? '').replace(/\D/g, '');
+      const state = store.cidade?.estado?.uf ?? '';
+      const city = store.cidade?.nome ?? '';
+      const brand = brandNames[store.rede?.rede] ?? store.rede?.rede ?? 'Farmarcas';
+
+      // Try matching existing pharmacy by CEP + similar name
+      let matchedIds: { id: string }[] = [];
+      if (normalizedCep.length >= 7) {
+        matchedIds = await db.select({ id: pharmacies.id })
+          .from(pharmacies)
+          .where(and(
+            sql`REPLACE(${pharmacies.cep}, '-', '') = ${normalizedCep}`,
+            sql`(UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE ${'%' + store.nome.split(' ').slice(0, 2).join('%').toUpperCase() + '%'} OR UPPER(COALESCE(${pharmacies.nomeFantasia}, '')) LIKE ${'%' + brand.toUpperCase() + '%'})`,
+          ))
+          .limit(1);
+      }
+
+      if (matchedIds.length > 0) {
+        matched++;
+        const updateData: Record<string, unknown> = {
+          lastScrapedAt: new Date(),
+          scrapeSource: 'farmarcas-api',
+          associationName: 'Farmarcas',
+          chainName: brand,
+          updatedAt: new Date(),
+        };
+        if (wa) {
+          updateData.whatsappNumber = wa;
+          updateData.whatsappVerified = true;
+        }
+        if (!matchedIds[0]) continue;
+        await db.update(pharmacies).set(updateData).where(eq(pharmacies.id, matchedIds[0].id));
+        updated++;
+      } else {
+        // Insert new pharmacy
+        await db.insert(pharmacies).values({
+          name: store.nome,
+          phoneNumber: phone,
+          phone2: normalizePhone(store.telefone_secundario),
+          city: city.toUpperCase(),
+          state,
+          cep: normalizedCep.length === 8 ? `${normalizedCep.slice(0, 5)}-${normalizedCep.slice(5)}` : store.cep,
+          logradouro: store.endereco,
+          numero: store.numero,
+          bairro: store.bairro,
+          chainName: brand,
+          associationName: 'Farmarcas',
+          whatsappNumber: wa,
+          whatsappVerified: !!wa,
+          lastScrapedAt: new Date(),
+          scrapeSource: 'farmarcas-api',
+          notes: `Horários: Semana ${store.horario_semana}, Sáb ${store.horario_sabado}, Dom ${store.horario_domingo}`,
+        });
+        created++;
+      }
+    }
+
+    return c.json({
+      storesReceived: stores.length,
+      matched,
+      updated,
+      created,
+      skipped,
+    });
+  });
+
   return app;
 }
 
