@@ -285,11 +285,16 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
   // Scrape phone numbers from Raia Drogasil via Next.js JSON data routes
   // RD doesn't expose WhatsApp — phones are saved to phone2 for later validation
   app.post('/scrape-raia-drogasil', async (c) => {
-    const REGION_NAMES = [
+    const ALL_REGIONS = [
       'São Paulo', 'Rio de Janeiro', 'Paraná', 'Rio Grande do Sul',
       'Santa Catarina', 'Minas Gerais', 'Ceará', 'Pernambuco',
       'Mato Grosso',
     ];
+    const ALL_BRANDS = ['drogaraia.com.br', 'drogasil.com.br'];
+
+    const body = await c.req.json().catch(() => ({})) as { brand?: string; state?: string };
+    const brands = body.brand ? [body.brand] : ALL_BRANDS;
+    const regions = body.state ? [body.state] : ALL_REGIONS;
 
     type RdStore = {
       id: number;
@@ -309,11 +314,9 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     };
 
     const allStores: RdStore[] = [];
-    const brands = ['drogaraia.com.br', 'drogasil.com.br'];
     const errors: string[] = [];
 
     for (const brand of brands) {
-      // Discover the Next.js build ID from the HTML page
       let buildId: string | null = null;
       try {
         const htmlRes = await fetch(`https://www.${brand}/nossas-lojas`, {
@@ -331,7 +334,7 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
         continue;
       }
 
-      for (const region of REGION_NAMES) {
+      for (const region of regions) {
         let page = 1;
         let totalPages = 1;
 
