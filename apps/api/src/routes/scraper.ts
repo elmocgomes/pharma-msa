@@ -7,34 +7,62 @@ import { waSessions } from '@pharma/db';
 export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
   const app = new Hono();
 
-  // Check WhatsApp numbers for pharmacies in a given state
-  // Uses wa-gateway's check-number endpoint
+  // Validate phone numbers against WhatsApp via wa-gateway
+  // Checks phoneNumber and phone2 fields, updates whatsappNumber if registered
   app.post('/whatsapp-check', async (c) => {
-    const { sessionId, state, limit: rawLimit } = await c.req.json();
-    const limit = Math.min(rawLimit ?? 50, 200);
+    const { sessionId, state, chain, limit: rawLimit, delayMs: rawDelay } = await c.req.json() as {
+      sessionId: string; state?: string; chain?: string; limit?: number; delayMs?: number;
+    };
+    const limit = Math.min(rawLimit ?? 50, 500);
+    const delayMs = Math.max(rawDelay ?? 1000, 300);
 
     const [session] = await db.select().from(waSessions).where(eq(waSessions.id, sessionId));
     if (!session) return c.json({ error: 'Session not found' }, 404);
     if (session.status !== 'connected') return c.json({ error: 'Session not connected' }, 400);
 
-    // Get pharmacies without WhatsApp verification
-    const conditions = [eq(pharmacies.whatsappVerified, false)];
+    // Build conditions: no WhatsApp yet, has at least one phone number
+    const conditions = [
+      sql`${pharmacies.whatsappNumber} IS NULL`,
+      sql`(${pharmacies.phoneNumber} IS NOT NULL OR ${pharmacies.phone2} IS NOT NULL)`,
+    ];
     if (state) conditions.push(eq(pharmacies.state, state));
-    conditions.push(isNotNull(pharmacies.phoneNumber));
+    if (chain) conditions.push(eq(pharmacies.chainName, chain));
 
     const targets = await db.select({
       id: pharmacies.id,
       phoneNumber: pharmacies.phoneNumber,
       phone2: pharmacies.phone2,
       name: pharmacies.name,
+      chainName: pharmacies.chainName,
     }).from(pharmacies)
       .where(and(...conditions))
       .limit(limit);
 
-    const results: { id: string; name: string; phone: string; isWhatsApp: boolean }[] = [];
+    if (targets.length === 0) {
+      return c.json({ checked: 0, withWhatsApp: 0, message: 'No pharmacies to check' });
+    }
+
+    const normalizePhone = (raw: string): string => {
+      const digits = raw.replace(/\D/g, '');
+      if (digits.startsWith('55') && digits.length >= 12) return digits;
+      if (digits.length >= 10) return `55${digits}`;
+      return digits;
+    };
+
+    const results: { id: string; name: string; chain: string | null; phone: string; isWhatsApp: boolean }[] = [];
+    let errors = 0;
 
     for (const ph of targets) {
-      for (const phone of [ph.phoneNumber, ph.phone2].filter(Boolean) as string[]) {
+      const phones = [ph.phone2, ph.phoneNumber]
+        .filter(Boolean)
+        .map(p => normalizePhone(p!))
+        .filter(p => p.length >= 12);
+
+      // Deduplicate
+      const uniquePhones = [...new Set(phones)];
+
+      let found = false;
+      for (const phone of uniquePhones) {
         try {
           const isWa = await waClient.isRegistered(session.name, phone);
           if (isWa) {
@@ -42,34 +70,40 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
               whatsappNumber: phone,
               whatsappVerified: true,
               lastScrapedAt: new Date(),
-              scrapeSource: 'wa-gateway',
+              scrapeSource: 'wa-validation',
               updatedAt: new Date(),
             }).where(eq(pharmacies.id, ph.id));
-            results.push({ id: ph.id, name: ph.name, phone, isWhatsApp: true });
+            results.push({ id: ph.id, name: ph.name, chain: ph.chainName, phone, isWhatsApp: true });
+            found = true;
             break;
           }
         } catch {
-          // Rate limit or error — skip
+          errors++;
         }
-        // Small delay to avoid rate limits
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, delayMs));
       }
 
-      // If neither phone worked, mark as verified (no WhatsApp)
-      const found = results.find(r => r.id === ph.id);
       if (!found) {
+        // Mark as checked (whatsappVerified=true) so we don't re-check
         await db.update(pharmacies).set({
           whatsappVerified: true,
           lastScrapedAt: new Date(),
-          scrapeSource: 'wa-gateway',
           updatedAt: new Date(),
         }).where(eq(pharmacies.id, ph.id));
-        results.push({ id: ph.id, name: ph.name, phone: ph.phoneNumber, isWhatsApp: false });
+        results.push({ id: ph.id, name: ph.name, chain: ph.chainName, phone: uniquePhones[0] ?? '', isWhatsApp: false });
       }
+
+      await new Promise(r => setTimeout(r, delayMs));
     }
 
     const withWa = results.filter(r => r.isWhatsApp).length;
-    return c.json({ checked: results.length, withWhatsApp: withWa, results });
+    return c.json({
+      checked: results.length,
+      withWhatsApp: withWa,
+      withoutWhatsApp: results.length - withWa,
+      errors,
+      results,
+    });
   });
 
   // Enrich chain/association data using known patterns
@@ -248,26 +282,24 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     });
   });
 
-  // Scrape WhatsApp numbers from Raia Drogasil store locator
-  // Uses phone numbers from their Next.js store locator pages
+  // Scrape phone numbers from Raia Drogasil via Next.js JSON data routes
+  // RD doesn't expose WhatsApp — phones are saved to phone2 for later validation
   app.post('/scrape-raia-drogasil', async (c) => {
-    const STATE_SEARCH: Record<string, string> = {
-      SP: 'sao+paulo', RJ: 'rio+de+janeiro', PR: 'parana', RS: 'rio+grande+do+sul',
-      SC: 'santa+catarina', MG: 'minas+gerais', BA: 'bahia', CE: 'ceara',
-      GO: 'goias', MT: 'mato+grosso', MS: 'mato+grosso+do+sul', PE: 'pernambuco',
-      ES: 'espirito+santo', DF: 'distrito+federal', PA: 'para', AM: 'amazonas',
-      MA: 'maranhao', PB: 'paraiba', RN: 'rio+grande+do+norte', PI: 'piaui',
-      SE: 'sergipe', AL: 'alagoas', TO: 'tocantins', RO: 'rondonia',
-      AC: 'acre', AP: 'amapa', RR: 'roraima',
-    };
+    const REGION_NAMES = [
+      'São Paulo', 'Rio de Janeiro', 'Paraná', 'Rio Grande do Sul',
+      'Santa Catarina', 'Minas Gerais', 'Ceará', 'Pernambuco',
+      'Mato Grosso',
+    ];
 
     type RdStore = {
+      id: number;
       telephone: string | null;
       telephoneAreaCode: number | null;
       fantasyName: string | null;
       storeName: string | null;
       address: {
         regionId: string;
+        regionName: string;
         cityName: string;
         neighborhood: string;
         street: string;
@@ -278,31 +310,42 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
 
     const allStores: RdStore[] = [];
     const brands = ['drogaraia.com.br', 'drogasil.com.br'];
+    const errors: string[] = [];
 
     for (const brand of brands) {
-      for (const [, stateSlug] of Object.entries(STATE_SEARCH)) {
+      // Discover the Next.js build ID from the HTML page
+      let buildId: string | null = null;
+      try {
+        const htmlRes = await fetch(`https://www.${brand}/nossas-lojas`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        });
+        if (htmlRes.ok) {
+          const html = await htmlRes.text();
+          const match = html.match(/\/_next\/static\/([^/]+)\/_buildManifest/);
+          if (match) buildId = match[1]!;
+        }
+      } catch { /* fallback below */ }
+
+      if (!buildId) {
+        errors.push(`Could not discover buildId for ${brand}`);
+        continue;
+      }
+
+      for (const region of REGION_NAMES) {
         let page = 1;
         let totalPages = 1;
 
-        while (page <= totalPages && page <= 100) {
+        while (page <= totalPages && page <= 200) {
           try {
-            const url = `https://www.${brand}/nossas-lojas?estado=${stateSlug}&page=${page}`;
+            const params = new URLSearchParams({ estado: region, limit: '100', page: String(page) });
+            const url = `https://www.${brand}/seo/_next/data/${buildId}/nossas-lojas.json?${params}`;
             const res = await fetch(url, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml',
-                'Accept-Language': 'pt-BR,pt;q=0.9',
-              },
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
             });
 
             if (!res.ok) break;
-
-            const html = await res.text();
-            const ndMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/);
-            if (!ndMatch) break;
-
-            const nextData = JSON.parse(ndMatch[1]!);
-            const storesData = nextData?.props?.pageProps?.storesData;
+            const data = await res.json() as { pageProps?: { storesData?: { items?: RdStore[]; page_info?: { total_pages?: number } } } };
+            const storesData = data?.pageProps?.storesData;
             if (!storesData?.items?.length) break;
 
             allStores.push(...storesData.items);
@@ -311,7 +354,7 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
           } catch {
             break;
           }
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 300));
         }
       }
     }
@@ -319,7 +362,7 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     // Deduplicate by postcode + storeName
     const seen = new Set<string>();
     const uniqueStores = allStores.filter(s => {
-      const key = `${s.address?.postcode}-${s.fantasyName}`;
+      const key = `${s.address?.postcode}-${s.storeName}-${s.fantasyName}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -327,29 +370,29 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
 
     let matched = 0;
     let updated = 0;
+    let noPhone = 0;
 
     for (const store of uniqueStores) {
-      if (!store.telephone || !store.telephoneAreaCode) continue;
+      if (!store.telephone || !store.telephoneAreaCode) { noPhone++; continue; }
 
-      const phone = `55${store.telephoneAreaCode}${store.telephone.trim()}`;
+      // Clean the phone: remove trailing spaces, split multiple numbers
+      const rawPhone = store.telephone.trim().split('/')[0]!.trim();
+      const phone = `55${store.telephoneAreaCode}${rawPhone}`;
       const normalizedCep = (store.address?.postcode ?? '').replace(/\D/g, '');
 
-      let matchedIds: { id: string }[] = [];
-      if (normalizedCep.length >= 7) {
-        matchedIds = await db.select({ id: pharmacies.id })
-          .from(pharmacies)
-          .where(and(
-            sql`REPLACE(${pharmacies.cep}, '-', '') = ${normalizedCep}`,
-            sql`${pharmacies.chainName} = 'Raia Drogasil' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%RAIA%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DROGASIL%'`,
-          ))
-          .limit(3);
-      }
+      if (normalizedCep.length < 7) continue;
+
+      const matchedIds = await db.select({ id: pharmacies.id })
+        .from(pharmacies)
+        .where(and(
+          sql`REPLACE(${pharmacies.cep}, '-', '') = ${normalizedCep}`,
+          sql`${pharmacies.chainName} = 'Raia Drogasil' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%RAIA%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DROGASIL%'`,
+        ))
+        .limit(3);
 
       if (matchedIds.length > 0) {
         matched += matchedIds.length;
         for (const { id } of matchedIds) {
-          // Store phone (not WhatsApp) — RD doesn't expose WhatsApp numbers
-          // But update phone2 if we got a new number and mark as scraped
           await db.update(pharmacies).set({
             phone2: phone,
             lastScrapedAt: new Date(),
@@ -363,9 +406,11 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
 
     return c.json({
       storesFetched: uniqueStores.length,
+      withPhone: uniqueStores.length - noPhone,
+      noPhone,
       matched,
       updated,
-      note: 'Raia Drogasil does not expose WhatsApp numbers. Phone numbers saved to phone2 field.',
+      errors: errors.length > 0 ? errors : undefined,
     });
   });
 
@@ -493,6 +538,33 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
       .limit(30);
 
     return c.json(rows);
+  });
+
+  // Diagnostic: WhatsApp validation opportunity — phones without WhatsApp
+  app.get('/validation-opportunity', async (c) => {
+    const rows = await db.select({
+      chainName: pharmacies.chainName,
+      total: count(),
+      hasWhatsapp: sql<number>`count(*) FILTER (WHERE whatsapp_number IS NOT NULL)`,
+      hasPhone2NoWa: sql<number>`count(*) FILTER (WHERE phone2 IS NOT NULL AND whatsapp_number IS NULL)`,
+      hasPhoneNoWa: sql<number>`count(*) FILTER (WHERE phone_number IS NOT NULL AND whatsapp_number IS NULL AND phone2 IS NULL)`,
+      alreadyChecked: sql<number>`count(*) FILTER (WHERE whatsapp_verified = true AND whatsapp_number IS NULL)`,
+      unchecked: sql<number>`count(*) FILTER (WHERE whatsapp_verified = false AND (phone_number IS NOT NULL OR phone2 IS NOT NULL) AND whatsapp_number IS NULL)`,
+    }).from(pharmacies)
+      .where(isNotNull(pharmacies.chainName))
+      .groupBy(pharmacies.chainName)
+      .orderBy(sql`count(*) FILTER (WHERE whatsapp_verified = false AND (phone_number IS NOT NULL OR phone2 IS NOT NULL) AND whatsapp_number IS NULL) DESC`)
+      .limit(30);
+
+    const totals = rows.reduce((acc, r) => ({
+      total: acc.total + Number(r.total),
+      hasWhatsapp: acc.hasWhatsapp + Number(r.hasWhatsapp),
+      hasPhone2NoWa: acc.hasPhone2NoWa + Number(r.hasPhone2NoWa),
+      unchecked: acc.unchecked + Number(r.unchecked),
+      alreadyChecked: acc.alreadyChecked + Number(r.alreadyChecked),
+    }), { total: 0, hasWhatsapp: 0, hasPhone2NoWa: 0, unchecked: 0, alreadyChecked: 0 });
+
+    return c.json({ totals, chains: rows });
   });
 
   // Diagnostic: check Panvel matching details
