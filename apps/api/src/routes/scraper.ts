@@ -417,6 +417,45 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     });
   });
 
+  // Import pre-fetched Raia Drogasil phone numbers (fetched locally to avoid proxy timeout)
+  app.post('/import-raia-phones', async (c) => {
+    const { stores } = await c.req.json() as {
+      stores: Array<{ cep: string; phone: string; storeName?: string }>;
+    };
+    if (!Array.isArray(stores)) return c.json({ error: 'stores array required' }, 400);
+
+    let matched = 0;
+    let updated = 0;
+
+    for (const store of stores) {
+      const normalizedCep = (store.cep ?? '').replace(/\D/g, '');
+      if (normalizedCep.length < 7 || !store.phone) continue;
+
+      const matchedIds = await db.select({ id: pharmacies.id })
+        .from(pharmacies)
+        .where(and(
+          sql`REPLACE(${pharmacies.cep}, '-', '') = ${normalizedCep}`,
+          sql`${pharmacies.chainName} = 'Raia Drogasil' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%RAIA%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DROGASIL%'`,
+        ))
+        .limit(3);
+
+      if (matchedIds.length > 0) {
+        matched += matchedIds.length;
+        for (const { id } of matchedIds) {
+          await db.update(pharmacies).set({
+            phone2: store.phone,
+            lastScrapedAt: new Date(),
+            scrapeSource: 'raia-drogasil-website',
+            updatedAt: new Date(),
+          }).where(eq(pharmacies.id, id));
+          updated++;
+        }
+      }
+    }
+
+    return c.json({ received: stores.length, matched, updated });
+  });
+
   // Import pre-fetched Panvel store data and match to DB
   // Panvel API is WAF-protected, so data is fetched client-side and POSTed here
   app.post('/import-panvel', async (c) => {
