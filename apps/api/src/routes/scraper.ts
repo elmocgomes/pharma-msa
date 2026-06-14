@@ -479,6 +479,57 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     return c.json({ ...stats, topChains: chains });
   });
 
+  // Diagnostic: check chain WhatsApp coverage
+  app.get('/chain-whatsapp', async (c) => {
+    const rows = await db.select({
+      chainName: pharmacies.chainName,
+      total: count(),
+      withWhatsapp: sql<number>`count(*) FILTER (WHERE whatsapp_number IS NOT NULL)`,
+      withoutWhatsapp: sql<number>`count(*) FILTER (WHERE whatsapp_number IS NULL)`,
+    }).from(pharmacies)
+      .where(isNotNull(pharmacies.chainName))
+      .groupBy(pharmacies.chainName)
+      .orderBy(sql`count(*) DESC`)
+      .limit(30);
+
+    return c.json(rows);
+  });
+
+  // Diagnostic: check Panvel matching details
+  app.get('/panvel-debug', async (c) => {
+    const panvelPharmacies = await db.select({
+      total: count(),
+      withWhatsapp: sql<number>`count(*) FILTER (WHERE whatsapp_number IS NOT NULL)`,
+      panvelSource: sql<number>`count(*) FILTER (WHERE scrape_source = 'panvel-website')`,
+    }).from(pharmacies)
+      .where(sql`chain_name = 'Panvel' OR UPPER(COALESCE(razao_social, '')) LIKE '%PANVEL%' OR UPPER(COALESCE(razao_social, '')) LIKE '%DIMED%'`);
+
+    const sampleWithWhatsapp = await db.select({
+      cnpj: pharmacies.cnpj,
+      razaoSocial: pharmacies.razaoSocial,
+      chainName: pharmacies.chainName,
+      city: pharmacies.city,
+      state: pharmacies.state,
+      whatsappNumber: pharmacies.whatsappNumber,
+      scrapeSource: pharmacies.scrapeSource,
+    }).from(pharmacies)
+      .where(sql`scrape_source = 'panvel-website'`)
+      .limit(10);
+
+    const sampleWithout = await db.select({
+      cnpj: pharmacies.cnpj,
+      razaoSocial: pharmacies.razaoSocial,
+      chainName: pharmacies.chainName,
+      city: pharmacies.city,
+      state: pharmacies.state,
+      cep: pharmacies.cep,
+    }).from(pharmacies)
+      .where(sql`(chain_name = 'Panvel' OR UPPER(COALESCE(razao_social, '')) LIKE '%PANVEL%' OR UPPER(COALESCE(razao_social, '')) LIKE '%DIMED%') AND whatsapp_number IS NULL`)
+      .limit(10);
+
+    return c.json({ summary: panvelPharmacies[0], matchedSample: sampleWithWhatsapp, unmatchedSample: sampleWithout });
+  });
+
   return app;
 }
 
