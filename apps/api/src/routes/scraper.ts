@@ -685,6 +685,76 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
     });
   });
 
+  // Import DPSP (Drogarias Pacheco) WhatsApp numbers
+  app.post('/import-dpsp', async (c) => {
+    type DpspStore = {
+      id: number;
+      codigo: string;
+      nome: string;
+      whatsapp: string | null;
+      telefone: string | null;
+      endereco: string | null;
+      numero: string | null;
+      bairro: string | null;
+      cidade: string;
+      uf: string;
+      cep: string;
+    };
+
+    const { stores } = await c.req.json() as { stores: DpspStore[] };
+    if (!Array.isArray(stores)) return c.json({ error: 'stores array required' }, 400);
+
+    const formatPhone = (raw: string): string => {
+      const digits = raw.replace(/\D/g, '');
+      return digits.startsWith('55') ? digits : `55${digits}`;
+    };
+
+    let matched = 0;
+    let updated = 0;
+    let noPhone = 0;
+    let alreadyHad = 0;
+
+    for (const store of stores) {
+      if (!store.whatsapp) { noPhone++; continue; }
+
+      const whatsappNumber = formatPhone(store.whatsapp);
+      const normalizedCep = store.cep.replace(/\D/g, '');
+
+      // Match by CEP + chain name
+      const matchedIds = await db.select({ id: pharmacies.id, whatsappNumber: pharmacies.whatsappNumber })
+        .from(pharmacies)
+        .where(and(
+          sql`REPLACE(${pharmacies.cep}, '-', '') = ${normalizedCep}`,
+          sql`(${pharmacies.chainName} = 'DPSP (Pacheco/São Paulo)' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%PACHECO%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DPSP%')`,
+        ))
+        .limit(5);
+
+      if (matchedIds.length > 0) {
+        matched += matchedIds.length;
+        for (const row of matchedIds) {
+          if (row.whatsappNumber) { alreadyHad++; continue; }
+          await db.update(pharmacies).set({
+            whatsappNumber,
+            whatsappVerified: true,
+            lastScrapedAt: new Date(),
+            scrapeSource: 'dpsp-website',
+            updatedAt: new Date(),
+          }).where(eq(pharmacies.id, row.id));
+          updated++;
+        }
+      }
+    }
+
+    return c.json({
+      storesReceived: stores.length,
+      withPhone: stores.length - noPhone,
+      noPhone,
+      matched,
+      updated,
+      alreadyHad,
+    });
+  });
+
   return app;
 }
 
