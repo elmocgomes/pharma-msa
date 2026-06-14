@@ -403,7 +403,7 @@ export function createScraperRoutes(db: Db, waClient: WhatsAppClient) {
         matchedIds = await db.select({ id: pharmacies.id })
           .from(pharmacies)
           .where(and(
-            sql`REPLACE(REPLACE(${pharmacies.cnpj}, '.', ''), '/', '') = REPLACE(REPLACE(${store.cnpj}, '.', ''), '/', '')`,
+            sql`REPLACE(REPLACE(REPLACE(${pharmacies.cnpj}, '.', ''), '/', ''), '-', '') = REPLACE(REPLACE(REPLACE(${store.cnpj}, '.', ''), '/', ''), '-', '')`,
             sql`${pharmacies.chainName} = 'Panvel' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%PANVEL%' OR UPPER(COALESCE(${pharmacies.razaoSocial}, '')) LIKE '%DIMED%'`,
           ))
           .limit(3);
